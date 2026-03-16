@@ -3,8 +3,7 @@ module PipelineTests
 using ShapefileToGmsh
 using Test
 
-include("fixture.jl")
-const FIXTURE_SHP = _create_test_shapefile(mktempdir())
+const FIXTURE_SHP = joinpath(@__DIR__, "..", "meshes", "toy", "fixture.shp")
 const TMP_NAME    = joinpath(tempdir(), "test_shapefile_to_gmsh_pipeline")
 
 function run()

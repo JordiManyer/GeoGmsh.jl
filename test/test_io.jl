@@ -3,8 +3,7 @@ module IOTests
 using ShapefileToGmsh
 using Test
 
-include("fixture.jl")
-const FIXTURE_SHP = _create_test_shapefile(mktempdir())
+const FIXTURE_SHP = joinpath(@__DIR__, "..", "meshes", "toy", "fixture.shp")
 
 function run()
   # read_shapefile: basic structure (3 records → 3 ShapeGeometry objects).
