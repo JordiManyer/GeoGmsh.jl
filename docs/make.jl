@@ -17,7 +17,7 @@ makedocs(
 )
 
 deploydocs(
-  repo         = "github.com/JordiManyer/ShapefileToGmsh.git",
+  repo         = "github.com/JordiManyer/ShapefileToGmsh.jl.git",
   devbranch    = "master",
   push_preview = true,
 )
