@@ -3,25 +3,33 @@ module PipelineTests
 using ShapefileToGmsh
 using Test
 
-const AUS_SHP = joinpath(@__DIR__, "..", "meshes", "australia", "AUS_2021_AUST_GDA2020.shp")
-const TMP_NAME = joinpath(tempdir(), "test_shapefile_to_gmsh_pipeline")
+include("fixture.jl")
+const FIXTURE_SHP = _create_test_shapefile(mktempdir())
+const TMP_NAME    = joinpath(tempdir(), "test_shapefile_to_gmsh_pipeline")
 
 function run()
-  # Target CRS string, edge coarsening, and bbox rescaling.
+  # Reproject + coarsen (edge_length_range much larger than the 2° squares,
+  # so rings survive) + rescale → single .geo file.
   shapefile_to_geo(
-    AUS_SHP, TMP_NAME;
+    FIXTURE_SHP, TMP_NAME;
     proj_method       = "EPSG:3857",
-    edge_length_range = (500_000.0, Inf),
+    edge_length_range = (50_000.0, Inf),
     bbox_size         = 100.0,
-    mesh_size         = 2.0,
+    mesh_size         = 5.0,
   )
   @test isfile(TMP_NAME * ".geo")
   rm(TMP_NAME * ".geo")
 
-  # proj_method = nothing (skip reprojection, keep raw coordinates).
+  # Skip reprojection.
+  shapefile_to_geo(FIXTURE_SHP, TMP_NAME; proj_method = nothing, mesh_size = 1.0)
+  @test isfile(TMP_NAME * ".geo")
+  rm(TMP_NAME * ".geo")
+
+  # select kwarg filters records before processing.
   shapefile_to_geo(
-    AUS_SHP, TMP_NAME;
+    FIXTURE_SHP, TMP_NAME;
     proj_method = nothing,
+    select      = row -> string(row.CODE) == "A1",
     mesh_size   = 1.0,
   )
   @test isfile(TMP_NAME * ".geo")

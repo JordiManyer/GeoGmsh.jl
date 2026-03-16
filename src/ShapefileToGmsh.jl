@@ -1,3 +1,38 @@
+"""
+    ShapefileToGmsh
+
+Convert ESRI Shapefiles to Gmsh geometry (`.geo`) and mesh (`.msh`) files.
+
+## Typical workflow
+
+```julia
+using ShapefileToGmsh
+
+# 1. Inspect the shapefile's attribute table.
+list_components("regions.shp")
+
+# 2. Generate a mesh for a single region (already in metres).
+shapefile_to_msh("regions.shp", "output/my_region";
+  select            = row -> row.NAME == "Catalonia",
+  proj_method       = nothing,
+  edge_length_range = (5_000.0, Inf),
+  bbox_size         = 100.0,
+  mesh_size         = 2.0,
+)
+```
+
+## Pipeline
+
+`shapefile_to_geo` / `shapefile_to_msh` run these steps in order:
+
+1. [`read_shapefile`](@ref) — parse the `.shp` geometry, optionally filtered
+   by [`select`](@ref read_shapefile).
+2. [`project_to_meters`](@ref) — reproject coordinates with the PROJ library.
+3. [`coarsen_edges`](@ref) / [`refine_edges`](@ref) — adjust edge resolution.
+4. [`filter_components`](@ref) — drop degenerate rings produced by coarsening.
+5. [`rescale`](@ref) — normalise geometry into an `L × L` bounding box.
+6. [`write_geo`](@ref) or [`generate_mesh`](@ref) — write output.
+"""
 module ShapefileToGmsh
 
 using Shapefile
@@ -27,6 +62,11 @@ then write a Gmsh `.geo` file.  `output_name` should be given **without** the
                         `Proj.Transformation`, or `nothing` to skip reprojection
                         (use when the shapefile is already in the desired units).
                         Default: `"EPSG:3857"`.
+- `select`            — restrict which Shapefile records are loaded.  May be
+                        an `AbstractVector{Int}` of 1-based row indices, a
+                        predicate `row -> Bool` on DBF attributes, or `nothing`
+                        (default, load all records).  See [`list_components`](@ref)
+                        to inspect available attributes.
 - `edge_length_range` — `(min, max)` edge length bounds in the (possibly
                         reprojected) coordinate units.  Edges shorter than `min`
                         are coarsened; edges longer than `max` are refined.
@@ -67,6 +107,7 @@ function shapefile_to_geo(
     min_len, max_len = Float64.(edge_length_range)
     geoms = coarsen_edges(geoms, min_len; strategy = coarsen_strategy)
     geoms = refine_edges(geoms, max_len)
+    geoms = filter_components(geoms)
   end
 
   if !isnothing(bbox_size)
@@ -84,7 +125,9 @@ End-to-end pipeline: read a Shapefile, optionally reproject and resample edges,
 then generate a 2-D Gmsh mesh and write a `.msh` file.  `output_name` should
 be given **without** the `.msh` extension.
 
-Accepts the same geometry kwargs as `shapefile_to_geo`, plus:
+Accepts the same keyword arguments as [`shapefile_to_geo`](@ref)
+(`proj_method`, `select`, `edge_length_range`, `coarsen_strategy`,
+`bbox_size`, `mesh_size`, `mesh_algorithm`, `split_components`), plus:
 
 # Additional keyword arguments
 - `order`     — element order: 1 = linear (default), 2 = quadratic.
@@ -116,6 +159,7 @@ function shapefile_to_msh(
     min_len, max_len = Float64.(edge_length_range)
     geoms = coarsen_edges(geoms, min_len; strategy = coarsen_strategy)
     geoms = refine_edges(geoms, max_len)
+    geoms = filter_components(geoms)
   end
 
   if !isnothing(bbox_size)
@@ -137,7 +181,7 @@ export read_shapefile, list_components
 
 export project_to_meters, rescale
 
-export coarsen_edges, refine_edges
+export coarsen_edges, refine_edges, filter_components
 
 export write_geo
 export generate_mesh

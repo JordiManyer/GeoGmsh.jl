@@ -57,6 +57,31 @@ function refine_edges(
   return [_refine_geom(g, len) for g in geoms]
 end
 
+"""
+    filter_components(geoms; min_points = 4) -> Vector{ShapeGeometry}
+
+Remove geometrically degenerate components:
+
+- Drop any `ShapeGeometry` whose exterior ring has fewer than `min_points`
+  vertices.
+- Strip any hole with fewer than `min_points` vertices (the exterior is kept).
+
+The default `min_points = 4` removes 3-point (triangular) rings that survive
+coarsening and can cause Gmsh meshing failures.
+"""
+function filter_components(
+  geoms      :: Vector{ShapeGeometry};
+  min_points :: Int = 4,
+) :: Vector{ShapeGeometry}
+  out = ShapeGeometry[]
+  for g in geoms
+    npoints(g.exterior) < min_points && continue
+    holes = filter(h -> npoints(h) >= min_points, g.holes)
+    push!(out, ShapeGeometry(g.exterior, holes))
+  end
+  return out
+end
+
 # Single-geometry overloads for convenience.
 coarsen_edges(g::ShapeGeometry, len::Real; kwargs...) =
   only(coarsen_edges([g], len; kwargs...))
