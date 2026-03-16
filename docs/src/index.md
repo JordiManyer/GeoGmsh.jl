@@ -94,3 +94,12 @@ shapefile_to_msh(
 
 Each step is also available as a standalone function for more control.
 See the [Pipeline guide](@ref pipeline) and [API reference](@ref api) for details.
+
+## Data sources
+
+The example meshes above were generated from the following open datasets:
+
+- **NUTS — Territorial units statistics** (Spain, Catalonia): Eurostat / GISCO, © European Union.
+  [https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics](https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics)
+- **ASGS Edition 3** (Australia): Australian Bureau of Statistics.
+  [https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3](https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3)
