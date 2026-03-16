@@ -1,50 +1,52 @@
 module EdgeOpsTests
 
-using ShapefileToGmsh
+using GeoGmsh
+import GeometryOps as GO
+import GeoInterface as GI
 using Test
 
-# Dense circle polygon: N equispaced points on a circle of radius R.
-# Adjacent points are ≈ 2πR/N apart.
-function _dense_circle(n::Int, R::Float64 = 50_000.0)
-  pts = NTuple{2,Float64}[
-    (R * cos(2π * i / n), R * sin(2π * i / n)) for i in 0:n-1
-  ]
+# Dense circle as a GI.Polygon (for GO.simplify / GO.segmentize).
+function _dense_circle_poly(n::Int, R::Float64 = 50_000.0)
+  pts = [(R * cos(2π * i / n), R * sin(2π * i / n)) for i in 0:n-1]
+  push!(pts, pts[1])   # close the ring
+  GI.Polygon([GI.LinearRing(pts)])
+end
+
+# Dense circle as ShapeGeometry (for filter_components tests).
+function _dense_circle_shape(n::Int, R::Float64 = 1.0)
+  pts = NTuple{2,Float64}[(R * cos(2π * i / n), R * sin(2π * i / n)) for i in 0:n-1]
   ShapeGeometry(Contour(pts, true), Contour[])
 end
 
 function run()
-  # Two synthetic components: 400-point circle (≈785 m spacing) and
-  # 200-point circle (≈628 m spacing).
-  geoms = [_dense_circle(400, 50_000.0), _dense_circle(200, 20_000.0)]
-  _test_coarsening(geoms)
-  _test_refinement(geoms)
+  _test_simplify()
+  _test_segmentize()
   _test_filter()
 end
 
-function _test_coarsening(geoms)
-  total_before = sum(npoints(g.exterior) for g in geoms)
+function _test_simplify()
+  # 400-point circle with R=50 km → adjacent points ≈ 785 m apart.
+  poly     = _dense_circle_poly(400, 50_000.0)
+  n_before = GI.npoint(GI.getexterior(poly))
 
-  coarsened_s = coarsen_edges(geoms, 5_000.0; strategy = :single)
-  coarsened_i = coarsen_edges(geoms, 5_000.0; strategy = :iterative)
+  simplified = GO.simplify(MinEdgeLength(tol = 5_000.0), poly)
+  n_after    = GI.npoint(GI.getexterior(simplified))
 
-  total_single    = sum(npoints(g.exterior) for g in coarsened_s)
-  total_iterative = sum(npoints(g.exterior) for g in coarsened_i)
-
-  @test total_single    < total_before
-  @test total_iterative < total_before
-  # Iterative must be at least as aggressive as single-pass.
-  @test total_iterative <= total_single
-  # No ring should degenerate below 3 points.
-  for g in coarsened_i
-    @test npoints(g.exterior) >= 3
-  end
+  # Simplification must reduce the point count.
+  @test n_after < n_before
+  # Result must still be a valid ring (≥ 3 points).
+  @test n_after >= 3
 end
 
-function _test_refinement(geoms)
-  total_before = sum(npoints(g.exterior) for g in geoms)
-  refined      = refine_edges(geoms, 1_000.0)
-  total_after  = sum(npoints(g.exterior) for g in refined)
-  @test total_after >= total_before
+function _test_segmentize()
+  # Coarse 4-point square-ish polygon → segmentize should add points.
+  poly     = _dense_circle_poly(4, 50_000.0)
+  n_before = GI.npoint(GI.getexterior(poly))
+
+  segmented = GO.segmentize(poly; max_distance = 5_000.0)
+  n_after   = GI.npoint(GI.getexterior(segmented))
+
+  @test n_after > n_before
 end
 
 function _test_filter()
@@ -53,7 +55,7 @@ function _test_filter()
     Contour(NTuple{2,Float64}[(0.0,0.0),(1.0,0.0),(0.5,1.0)], true),
     Contour[],
   )
-  square = _dense_circle(10, 1.0)   # 10-point ring: kept
+  square   = _dense_circle_shape(10, 1.0)
   filtered = filter_components([tri, square])
   @test length(filtered) == 1
   @test npoints(filtered[1].exterior) == 10

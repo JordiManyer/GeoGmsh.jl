@@ -18,11 +18,12 @@ function _fmt(n::Integer)
 end
 
 # Short label for a CRS argument (source or target).
-_crs_label(s::String) = begin
+_crs_label(s::AbstractString) = begin
   m = match(r"""["']([^"']+)["']""", s)
   isnothing(m) ? (length(s) > 50 ? s[1:50] * "…" : s) : m.captures[1]
 end
 _crs_label(::Proj.Transformation) = "Proj.Transformation"
+_crs_label(x) = _crs_label(string(x))
 _crs_label(::Nothing) = "—"
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 using Documenter
-using ShapefileToGmsh
+using GeoGmsh
 
 makedocs(
-  sitename = "ShapefileToGmsh.jl",
+  sitename = "GeoGmsh.jl",
   format   = Documenter.HTML(
     prettyurls = get(ENV, "CI", nothing) == "true",
   ),
-  modules   = [ShapefileToGmsh],
+  modules   = [GeoGmsh],
   pages     = [
     "Home"           => "index.md",
     "Pipeline guide" => "pipeline.md",
@@ -17,7 +17,7 @@ makedocs(
 )
 
 deploydocs(
-  repo         = "github.com/JordiManyer/ShapefileToGmsh.jl.git",
+  repo         = "github.com/JordiManyer/GeoGmsh.jl.git",
   devbranch    = "master",
   push_preview = true,
 )

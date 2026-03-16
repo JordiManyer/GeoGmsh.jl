@@ -1,6 +1,6 @@
 module MeshTests
 
-using ShapefileToGmsh
+using GeoGmsh
 using Test
 
 # A small synthetic square (10 km side) so meshing is fast.

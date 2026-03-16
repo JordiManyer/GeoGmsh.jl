@@ -28,6 +28,29 @@ end
 ShapeGeometry(exterior::Contour, holes::Vector{Contour}) =
   ShapeGeometry(exterior, holes, "")
 
+# ---------------------------------------------------------------------------
+# GeoInterface traits
+# ---------------------------------------------------------------------------
+
+import GeoInterface as GI
+
+GI.isgeometry(::Type{ShapeGeometry}) = true
+GI.geomtrait(::ShapeGeometry)        = GI.PolygonTrait()
+GI.nhole(::GI.PolygonTrait, g::ShapeGeometry)        = length(g.holes)
+GI.getexterior(::GI.PolygonTrait, g::ShapeGeometry)  = g.exterior
+GI.gethole(::GI.PolygonTrait, g::ShapeGeometry, i)   = g.holes[i]
+
+GI.isgeometry(::Type{Contour}) = true
+GI.geomtrait(::Contour)        = GI.LinearRingTrait()
+GI.npoint(::GI.LinearRingTrait, c::Contour)      = length(c.points)
+GI.getpoint(::GI.LinearRingTrait, c::Contour, i) = c.points[i]
+# LinearRingTrait is closed by definition; no need to implement isclosed.
+# NTuple{2,Float64} points already have default GI.PointTrait + GI.x/GI.y from GeoInterface.
+
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
+
 """Number of points in a contour."""
 npoints(c::Contour) = length(c.points)
 

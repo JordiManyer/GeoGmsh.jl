@@ -1,13 +1,13 @@
 module GmshTests
 
-using ShapefileToGmsh
+using GeoGmsh
 using Test
 
 const FIXTURE_SHP = joinpath(@__DIR__, "..", "meshes", "toy", "fixture.shp")
-const TMP_NAME    = joinpath(tempdir(), "test_shapefile_to_gmsh")
+const TMP_NAME    = joinpath(tempdir(), "test_geogmsh")
 
 function run()
-  geoms, _ = read_shapefile(FIXTURE_SHP)
+  geoms = ingest(read_geodata(FIXTURE_SHP))
 
   # Single-file output → TMP_NAME.geo
   write_geo(geoms, TMP_NAME; mesh_size = 1.0)

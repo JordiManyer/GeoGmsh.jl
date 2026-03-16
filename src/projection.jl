@@ -1,14 +1,5 @@
 """
-Coordinate projection and geometry rescaling utilities.
-
-## Reprojection
-
-    project_to_meters(geoms, source_crs; target = "EPSG:3857")
-
-Uses the PROJ library (via Proj.jl) to reproject `geoms` from `source_crs`
-to `target`.  `source_crs` is the raw WKT string returned by `read_shapefile`
-(or any other CRS string PROJ understands).  `target` may be a CRS string
-(e.g. `"EPSG:3857"`) or a pre-built `Proj.Transformation`.
+Geometry rescaling utilities.
 
 ## Rescaling
 
@@ -16,45 +7,14 @@ to `target`.  `source_crs` is the raw WKT string returned by `read_shapefile`
 
 Uniformly scales and translates `geoms` so that the largest bounding-box
 dimension becomes exactly `L` and the minimum corner sits at the origin.
-"""
 
-import Proj
+Reprojection is now handled upstream by `GeometryOps.reproject` before
+geometries are ingested.
+"""
 
 # ============================================================================
 # Public API
 # ============================================================================
-
-"""
-    project_to_meters(geoms, source_crs; target = "EPSG:3857") -> Vector{ShapeGeometry}
-
-Reproject `geoms` using the PROJ library.
-
-- `source_crs` — WKT (or any PROJ-recognised CRS string) for the input data,
-  as returned by `read_shapefile`.  Pass `nothing` to assume EPSG:4326
-  (geographic degrees) with a warning.
-- `target` — destination CRS string (default `"EPSG:3857"`) or a pre-built
-  `Proj.Transformation`.
-"""
-function project_to_meters(
-  geoms      :: Vector{ShapeGeometry},
-  source_crs :: Union{String,Nothing};
-  target     :: Union{String,Proj.Transformation} = "EPSG:3857",
-) :: Vector{ShapeGeometry}
-  if isnothing(source_crs)
-    @warn "No CRS information found; assuming EPSG:4326 (geographic degrees)."
-    source_crs = "EPSG:4326"
-  end
-
-  trans = target isa Proj.Transformation ? target :
-          Proj.Transformation(source_crs, target; always_xy = true)
-
-  project = function(pt::NTuple{2,Float64})
-    r = trans(pt[1], pt[2])
-    (Float64(r[1]), Float64(r[2]))
-  end
-
-  return [_project_geometry(g, project) for g in geoms]
-end
 
 """
     rescale(geoms, L) -> Vector{ShapeGeometry}
