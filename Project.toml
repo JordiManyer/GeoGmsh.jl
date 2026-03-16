@@ -1,7 +1,7 @@
 name = "ShapefileToGmsh"
 uuid = "2e053855-5844-441f-8c9c-7f6fb193f5ff"
 authors = ["Jordi Manyer - jordi.manyer@monash.edu"]
-version = "0.0.1"
+version = "0.1.0"
 
 [deps]
 Gmsh = "705231aa-382f-11e9-3f0c-b7cb4346fdeb"
