@@ -18,6 +18,6 @@ makedocs(
 
 deploydocs(
   repo         = "github.com/JordiManyer/ShapefileToGmsh.git",
-  devbranch    = "main",
+  devbranch    = "master",
   push_preview = true,
 )

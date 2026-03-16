@@ -1,6 +1,6 @@
 # ShapefileToGmsh.jl
 
-[![Build Status](https://github.com/JordiManyer/ShapefileToGmsh.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/JordiManyer/ShapefileToGmsh.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Build Status](https://github.com/JordiManyer/ShapefileToGmsh.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/JordiManyer/ShapefileToGmsh.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 [![Documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://JordiManyer.github.io/ShapefileToGmsh.jl/dev/)
 
 A Julia package that converts ESRI Shapefiles into Gmsh geometry (`.geo`) and mesh (`.msh`) files, with full control over coordinate projection, edge resolution, and component selection.
