@@ -6,8 +6,8 @@ using Test
 const AUS_SHP = joinpath(@__DIR__, "..", "meshes", "australia", "AUS_2021_AUST_GDA2020.shp")
 
 function run()
-  geoms, crs = read_shapefile(AUS_SHP)
-  proj = project_to_meters(geoms, crs)
+  geoms, source_crs = read_shapefile(AUS_SHP)
+  proj = project_to_meters(geoms, source_crs; target = "EPSG:3857")
 
   _test_coarsening(proj)
   _test_refinement(proj)

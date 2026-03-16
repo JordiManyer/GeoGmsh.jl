@@ -1,136 +1,77 @@
 """
-Coordinate projection utilities.
+Coordinate projection and geometry rescaling utilities.
 
-All projections convert geographic coordinates (lon, lat in decimal degrees)
-to planar Cartesian coordinates in metres.
+## Reprojection
 
-## Projection method types
+    project_to_meters(geoms, source_crs; target = "EPSG:3857")
 
-Three concrete subtypes of `ProjectionMethod` are provided:
+Uses the PROJ library (via Proj.jl) to reproject `geoms` from `source_crs`
+to `target`.  `source_crs` is the raw WKT string returned by `read_shapefile`
+(or any other CRS string PROJ understands).  `target` may be a CRS string
+(e.g. `"EPSG:3857"`) or a pre-built `Proj.Transformation`.
 
-| Type                    | Description                                            |
-|-------------------------|--------------------------------------------------------|
-| `Equirectangular`       | Simple plate carrée. Fast; accurate for small regions. |
-| `Mercator`              | Conformal. Preserves angles; distorts area at high lat.|
-| `WebMercator`           | Identical formula to Mercator; labelled EPSG:3857.     |
+## Rescaling
 
-For convenience, the corresponding symbols `:equirectangular`, `:mercator`,
-and `:web_mercator` are also accepted wherever a `ProjectionMethod` is expected.
+    rescale(geoms, L)
 
-## Equirectangular
-
-    x = R · cos(φ₀) · λ
-    y = R · φ
-
-where λ and φ are longitude and latitude in radians and φ₀ is the reference
-(central) latitude. Constructed as `Equirectangular()` (auto-centroid) or
-`Equirectangular(lat_ref = φ₀)`.
-
-## Mercator / Web Mercator
-
-    x = R · λ
-    y = R · ln( tan(π/4 + φ/2) )
-
-Mercator is ill-defined at ±90°; input latitudes are clamped to ±85.051°.
+Uniformly scales and translates `geoms` so that the largest bounding-box
+dimension becomes exactly `L` and the minimum corner sits at the origin.
 """
 
-# ============================================================================
-# Public types
-# ============================================================================
-
-abstract type ProjectionMethod end
-
-"""
-    Equirectangular(; lat_ref = nothing)
-
-Equirectangular (plate carrée) projection.
-`lat_ref` is the reference latitude in degrees; when `nothing` it is
-auto-computed as the centroid latitude of the input geometries.
-"""
-struct Equirectangular <: ProjectionMethod
-  lat_ref::Union{Float64,Nothing}
-end
-Equirectangular(; lat_ref = nothing) = Equirectangular(lat_ref)
-
-"""    Mercator()
-
-Mercator conformal projection."""
-struct Mercator <: ProjectionMethod end
-
-"""    WebMercator()
-
-Web Mercator projection (EPSG:3857). Identical formula to `Mercator`."""
-struct WebMercator <: ProjectionMethod end
+import Proj
 
 # ============================================================================
 # Public API
 # ============================================================================
 
-const _EARTH_RADIUS = 6_371_000.0   # metres (mean radius)
-
 """
-    project_to_meters(geoms, crs = :degrees; method = Equirectangular())
-    -> Vector{ShapeGeometry}
+    project_to_meters(geoms, source_crs; target = "EPSG:3857") -> Vector{ShapeGeometry}
 
-Reproject `geoms` from degrees to metres.
+Reproject `geoms` using the PROJ library.
 
-`method` may be a `ProjectionMethod` struct or one of the convenience symbols
-`:equirectangular`, `:mercator`, `:web_mercator`.
-
-If `crs == :meters` the geometries are returned unchanged (identity).
-If `crs == :unknown` a warning is issued and the projection proceeds anyway.
+- `source_crs` — WKT (or any PROJ-recognised CRS string) for the input data,
+  as returned by `read_shapefile`.  Pass `nothing` to assume EPSG:4326
+  (geographic degrees) with a warning.
+- `target` — destination CRS string (default `"EPSG:3857"`) or a pre-built
+  `Proj.Transformation`.
 """
 function project_to_meters(
-  geoms  :: Vector{ShapeGeometry},
-  crs    :: Symbol = :degrees;
-  method :: Union{ProjectionMethod,Symbol} = Equirectangular(),
+  geoms      :: Vector{ShapeGeometry},
+  source_crs :: Union{String,Nothing};
+  target     :: Union{String,Proj.Transformation} = "EPSG:3857",
 ) :: Vector{ShapeGeometry}
-  crs == :meters && return geoms
-  crs == :unknown &&
-    @warn "CRS is unknown; assuming geographic (degrees) and projecting anyway."
-  m       = _to_proj_method(method)
-  project = _build_projector(geoms, m)
+  if isnothing(source_crs)
+    @warn "No CRS information found; assuming EPSG:4326 (geographic degrees)."
+    source_crs = "EPSG:4326"
+  end
+
+  trans = target isa Proj.Transformation ? target :
+          Proj.Transformation(source_crs, target; always_xy = true)
+
+  project = function(pt::NTuple{2,Float64})
+    r = trans(pt[1], pt[2])
+    (Float64(r[1]), Float64(r[2]))
+  end
+
   return [_project_geometry(g, project) for g in geoms]
+end
+
+"""
+    rescale(geoms, L) -> Vector{ShapeGeometry}
+
+Uniformly scale and translate `geoms` so that the largest dimension of the
+global bounding box equals `L` and the minimum corner is at the origin.
+"""
+function rescale(geoms::Vector{ShapeGeometry}, L::Real) :: Vector{ShapeGeometry}
+  xmin, xmax, ymin, ymax = _global_bbox(geoms)
+  scale = Float64(L) / max(xmax - xmin, ymax - ymin)
+  f = pt -> ((pt[1] - xmin) * scale, (pt[2] - ymin) * scale)
+  return [_project_geometry(g, f) for g in geoms]
 end
 
 # ============================================================================
 # Internal helpers
 # ============================================================================
-
-# Convert a Symbol shorthand to the corresponding struct.
-_to_proj_method(m::ProjectionMethod) = m
-function _to_proj_method(s::Symbol)
-  if s == :equirectangular; return Equirectangular()
-  elseif s == :mercator;    return Mercator()
-  elseif s == :web_mercator; return WebMercator()
-  else
-    throw(ArgumentError(
-      "Unknown projection method: $s. " *
-      "Choose from :equirectangular, :mercator, :web_mercator."
-    ))
-  end
-end
-
-function _build_projector(geoms, m::Equirectangular)
-  φ₀    = isnothing(m.lat_ref) ? _centroid_lat(geoms) : Float64(m.lat_ref)
-  cosφ₀ = cos(deg2rad(φ₀))
-  return pt -> (
-    _EARTH_RADIUS * cosφ₀ * deg2rad(pt[1]),
-    _EARTH_RADIUS * deg2rad(pt[2]),
-  )
-end
-
-function _build_projector(::Any, ::Union{Mercator,WebMercator})
-  return pt -> _mercator_pt(pt)
-end
-
-function _mercator_pt(pt::NTuple{2,Float64})
-  lon, lat = pt
-  lat = clamp(lat, -85.051129, 85.051129)   # avoid ±Inf at poles
-  x = _EARTH_RADIUS * deg2rad(lon)
-  y = _EARTH_RADIUS * log(tan(π/4 + deg2rad(lat)/2))
-  return (x, y)
-end
 
 function _project_contour(c::Contour, f)
   Contour(map(f, c.points), c.closed)
@@ -143,16 +84,18 @@ function _project_geometry(g::ShapeGeometry, f)
   )
 end
 
-# Centroid latitude: mean of all y-coordinates across all geometries.
-function _centroid_lat(geoms::Vector{ShapeGeometry})
-  total = 0.0
-  count = 0
+function _global_bbox(geoms::Vector{ShapeGeometry})
+  xmin = ymin =  Inf
+  xmax = ymax = -Inf
   for g in geoms
     for pt in g.exterior.points
-      total += pt[2]
-      count += 1
+      xmin = min(xmin, pt[1]); xmax = max(xmax, pt[1])
+      ymin = min(ymin, pt[2]); ymax = max(ymax, pt[2])
+    end
+    for h in g.holes, pt in h.points
+      xmin = min(xmin, pt[1]); xmax = max(xmax, pt[1])
+      ymin = min(ymin, pt[2]); ymax = max(ymax, pt[2])
     end
   end
-  count == 0 && return 0.0
-  return total / count
+  return xmin, xmax, ymin, ymax
 end

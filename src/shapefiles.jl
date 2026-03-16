@@ -1,13 +1,10 @@
 """
-    read_shapefile(path) -> (Vector{ShapeGeometry}, Symbol)
+    read_shapefile(path) -> (Vector{ShapeGeometry}, Union{String,Nothing})
 
-Read a Shapefile and return a vector of geometries plus a CRS tag.
+Read a Shapefile and return a vector of geometries plus the raw WKT string
+from the `.prj` sidecar file, or `nothing` if no `.prj` is found.
 
-`path` may include or omit the `.shp` extension. If a `.prj` sidecar file is
-present it is parsed to determine the coordinate reference system, returned as:
-- `:degrees`  — geographic CRS (lon/lat in decimal degrees)
-- `:meters`   — projected CRS (coordinates already in a linear unit)
-- `:unknown`  — no `.prj` found or unrecognised WKT
+`path` may include or omit the `.shp` extension.
 
 MultiPolygon records are flattened: each outer ring (plus its holes) becomes a
 separate `ShapeGeometry` entry.
@@ -17,7 +14,7 @@ function read_shapefile(path::AbstractString)
   shp_path = base * ".shp"
   prj_path = base * ".prj"
 
-  crs = isfile(prj_path) ? _read_prj(prj_path) : :unknown
+  source_crs = isfile(prj_path) ? read(prj_path, String) : nothing
 
   table = Shapefile.Table(shp_path)
   geoms = ShapeGeometry[]
@@ -26,22 +23,7 @@ function read_shapefile(path::AbstractString)
     isnothing(shape) && continue
     append!(geoms, _parse_shape(shape))
   end
-  return geoms, crs
-end
-
-# ---------------------------------------------------------------------------
-# CRS detection
-# ---------------------------------------------------------------------------
-
-function _read_prj(path::AbstractString) :: Symbol
-  wkt = read(path, String)
-  if occursin("GEOGCS", wkt) || occursin("Degree", wkt)
-    return :degrees
-  elseif occursin("PROJCS", wkt)
-    return :meters
-  else
-    return :unknown
-  end
+  return geoms, source_crs
 end
 
 # ---------------------------------------------------------------------------
