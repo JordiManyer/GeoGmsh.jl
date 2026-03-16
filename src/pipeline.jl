@@ -30,6 +30,10 @@ then write a Gmsh `.geo` file.  `output_name` should be given **without** the
                         (default: `nothing`, let Gmsh decide).
 - `split_components`  — if `true`, write one `.geo` file per geometry component
                         into a directory named `output_name` (default: `false`).
+- `name_fn`           — optional callable `row -> String` (same ring-level `row`
+                        as `select`) that sets the filename stem for each
+                        component when `split_components = true`.  When
+                        `nothing` (default), files are numbered sequentially.
 - `verbose`           — print progress and geometry statistics to stdout
                         (default: `true`).
 
@@ -40,6 +44,7 @@ function shapefile_to_geo(
   output_name :: AbstractString;
   proj_method       :: Union{String,Proj.Transformation,Nothing} = "EPSG:3857",
   select                                                         = nothing,
+  name_fn                                                        = nothing,
   edge_length_range :: Union{Tuple{Real,Real},Nothing}           = nothing,
   coarsen_strategy  :: Symbol                                    = :iterative,
   bbox_size         :: Union{Real,Nothing}                       = nothing,
@@ -50,7 +55,7 @@ function shapefile_to_geo(
 )
   # --- Read ------------------------------------------------------------------
   verbose && println("Reading: ", input_path)
-  geoms, source_crs = read_shapefile(input_path; select)
+  geoms, source_crs = read_shapefile(input_path; select, name_fn)
   if verbose
     _print_summary(_geom_summary(geoms))
   end
@@ -131,6 +136,7 @@ function shapefile_to_msh(
   output_name :: AbstractString;
   proj_method       :: Union{String,Proj.Transformation,Nothing} = "EPSG:3857",
   select                                                         = nothing,
+  name_fn                                                        = nothing,
   edge_length_range :: Union{Tuple{Real,Real},Nothing}           = nothing,
   coarsen_strategy  :: Symbol                                    = :iterative,
   bbox_size         :: Union{Real,Nothing}                       = nothing,
@@ -143,7 +149,7 @@ function shapefile_to_msh(
 )
   # --- Read ------------------------------------------------------------------
   verbose && println("Reading: ", input_path)
-  geoms, source_crs = read_shapefile(input_path; select)
+  geoms, source_crs = read_shapefile(input_path; select, name_fn)
   if verbose
     _print_summary(_geom_summary(geoms))
   end

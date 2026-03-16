@@ -77,7 +77,7 @@ function filter_components(
   for g in geoms
     npoints(g.exterior) < min_points && continue
     holes = filter(h -> npoints(h) >= min_points, g.holes)
-    push!(out, ShapeGeometry(g.exterior, holes))
+    push!(out, ShapeGeometry(g.exterior, holes, g.name))
   end
   return out
 end
@@ -97,6 +97,7 @@ function _coarsen_geom(g::ShapeGeometry, len::Float64, strategy::Symbol)
   ShapeGeometry(
     _coarsen_contour(g.exterior, len, strategy),
     [_coarsen_contour(h, len, strategy) for h in g.holes],
+    g.name,
   )
 end
 
@@ -164,6 +165,7 @@ function _refine_geom(g::ShapeGeometry, len::Float64)
   ShapeGeometry(
     _refine_contour(g.exterior, len),
     [_refine_contour(h, len) for h in g.holes],
+    g.name,
   )
 end
 

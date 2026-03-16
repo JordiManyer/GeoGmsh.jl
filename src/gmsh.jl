@@ -147,7 +147,7 @@ function _write_geo_split(
   n  = length(geoms)
   nd = ndigits(n)
   for (i, g) in enumerate(geoms)
-    bname = lpad(i, nd, '0') * ".geo"
+    bname = (isempty(g.name) ? lpad(i, nd, '0') : g.name) * ".geo"
     fname = joinpath(name, bname)
     _write_geo_single([g], fname; mesh_size, mesh_algorithm)
     if verbose
@@ -298,7 +298,7 @@ function _generate_mesh_split(
   total_nodes    = 0
   total_elements = 0
   for (i, g) in enumerate(geoms)
-    bname = lpad(i, nd, '0') * ".msh"
+    bname = (isempty(g.name) ? lpad(i, nd, '0') : g.name) * ".msh"
     fname = joinpath(name, bname)
     if verbose
       @printf("  [%*d / %d]  %-*s  ", nd, i, n, nd + 4, bname)

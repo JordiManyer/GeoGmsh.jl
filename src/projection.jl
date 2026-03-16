@@ -81,6 +81,7 @@ function _project_geometry(g::ShapeGeometry, f)
   ShapeGeometry(
     _project_contour(g.exterior, f),
     [_project_contour(h, f) for h in g.holes],
+    g.name,
   )
 end
 

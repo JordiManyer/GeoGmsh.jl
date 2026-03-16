@@ -22,7 +22,11 @@ hole rings are oriented CW (negative signed area).
 struct ShapeGeometry
   exterior::Contour
   holes::Vector{Contour}
+  name::String
 end
+
+ShapeGeometry(exterior::Contour, holes::Vector{Contour}) =
+  ShapeGeometry(exterior, holes, "")
 
 """Number of points in a contour."""
 npoints(c::Contour) = length(c.points)

@@ -1,44 +1,80 @@
 """
     list_components(path) -> Vector{NamedTuple}
 
-Print a formatted table of the attribute metadata for every record in the
-Shapefile at `path` (reads the `.dbf` sidecar; no geometry is loaded).
+Print two tables describing the contents of the Shapefile at `path`, then
+return a `Vector{NamedTuple}` with one entry per exterior ring (the expanded
+table).
 
-Each printed row corresponds to one Shapefile record and shows an `idx` column
-(1-based, for use with the `select` kwarg of `read_shapefile`) followed by all
-DBF attribute columns.  Column values longer than 24 characters are truncated.
+**Records table** — one row per DBF record, columns:
+`idx | <DBF attributes> | rings`
 
-Returns a `Vector{NamedTuple}` (with `:idx` prepended) for programmatic use.
+**Rings table** — one row per exterior ring (the unit produced by
+[`read_shapefile`](@ref)), columns:
+`idx | ring | <DBF attributes> | n_pts | area | xmin | xmax | ymin | ymax`
+
+- `idx`  — 1-based record index (matches the `AbstractVector{Int}` form of `select`).
+- `ring` — 1-based ring index within that record.
+- `area` — signed shoelace area in the file's native coordinate units (degrees²
+           for geographic CRS; useful for relative size comparison only).
+- `xmin/xmax/ymin/ymax` — bounding box of the exterior ring.
+
+The returned `Vector{NamedTuple}` has the same fields as the rings table and can
+be used directly with the callable form of `select` in [`read_shapefile`](@ref).
 """
 function list_components(path::AbstractString)
   base  = splitext(path)[1]
   table = Shapefile.Table(base * ".shp")
-  cols  = filter(!=(:geometry), collect(Tables.columnnames(table)))
+  cols  = _dbf_cols(table)
 
-  # Collect all metadata rows as NamedTuples.
-  meta = NamedTuple[]
+  # Parse all records.
+  record_data = []
   for (i, row) in enumerate(table)
-    push!(meta, (; :idx => i, (c => getproperty(row, c) for c in cols)...))
-  end
-  isempty(meta) && return meta
-
-  # Build string matrix for display.
-  headers   = ["idx"; string.(cols)]
-  str_rows  = [[string(r.idx); [string(r[c]) for c in cols]] for r in meta]
-  MAX_W     = 24
-  widths    = [min(MAX_W, max(length(headers[j]),
-                             maximum(length(row[j]) for row in str_rows)))
-               for j in eachindex(headers)]
-
-  fmt(s, w) = rpad(first(s, w), w)
-  header_line = join((fmt(headers[j], widths[j]) for j in eachindex(headers)), "  ")
-  println(header_line)
-  println("─"^length(header_line))
-  for row in str_rows
-    println(join((fmt(row[j], widths[j]) for j in eachindex(headers)), "  "))
+    dbf_vals   = NamedTuple(c => getproperty(row, c) for c in cols)
+    shape      = Shapefile.shape(row)
+    ring_geoms = isnothing(shape) ? ShapeGeometry[] : _parse_shape(shape)
+    push!(record_data, (idx = i, dbf = dbf_vals, rings = ring_geoms))
   end
 
-  return meta
+  isempty(record_data) && return NamedTuple[]
+
+  # --- Records table ---------------------------------------------------------
+  n_rec = length(record_data)
+  println("── Records ($n_rec) " * "─"^max(1, 50 - ndigits(n_rec) - 12))
+  sum_headers  = String["idx"; string.(cols); "rings"]
+  sum_str_rows = [[string(rd.idx);
+                   [string(rd.dbf[c]) for c in cols];
+                   string(length(rd.rings))]
+                  for rd in record_data]
+  _print_table(sum_headers, sum_str_rows)
+  println()
+
+  # --- Rings table -----------------------------------------------------------
+  expanded = NamedTuple[]
+  for rd in record_data
+    for (k, g) in enumerate(rd.rings)
+      push!(expanded, _ring_row(rd.idx, k, rd.dbf, g))
+    end
+  end
+
+  n_rings = length(expanded)
+  println("── Rings ($n_rings) " * "─"^max(1, 50 - ndigits(n_rings) - 10))
+  if !isempty(expanded)
+    geo_cols    = [:n_pts, :area, :xmin, :xmax, :ymin, :ymax]
+    exp_headers = String["idx"; "ring"; string.(cols); string.(geo_cols)]
+    exp_str_rows = Vector{String}[]
+    for r in expanded
+      row = String[string(r.idx), string(r.ring)]
+      for c in cols; push!(row, string(r[c])); end
+      push!(row, string(r.n_pts))
+      push!(row, @sprintf("%.4g", r.area))
+      push!(row, @sprintf("%.6g", r.xmin)); push!(row, @sprintf("%.6g", r.xmax))
+      push!(row, @sprintf("%.6g", r.ymin)); push!(row, @sprintf("%.6g", r.ymax))
+      push!(exp_str_rows, row)
+    end
+    _print_table(exp_headers, exp_str_rows)
+  end
+
+  return expanded
 end
 
 """
@@ -50,17 +86,26 @@ from the `.prj` sidecar file, or `nothing` if no `.prj` is found.
 `path` may include or omit the `.shp` extension.
 
 # Keyword arguments
-- `select` — restrict which records are loaded:
-  - `nothing` (default): load all records.
-  - `AbstractVector{Int}`: 1-based row indices to keep (as shown by
-    `list_components`).
-  - A callable `row -> Bool`: predicate on the DBF row; only records for
-    which the predicate returns `true` are loaded.
+- `select` — restrict which geometries are loaded:
+  - `nothing` (default): load all rings from all records.
+  - `AbstractVector{Int}`: 1-based **record** indices to keep (as shown in the
+    Records table by `list_components`).  All rings within each selected record
+    are included.
+  - A callable `row -> Bool`: predicate evaluated at **ring level**.  `row` has
+    fields `idx`, `ring`, all DBF attribute columns, `n_pts`, `area`, `xmin`,
+    `xmax`, `ymin`, `ymax` — matching the Rings table printed by
+    `list_components`.  Only rings for which the predicate returns `true` are
+    included.  Existing predicates on DBF columns (e.g.
+    `row -> row.NAME == "X"`) continue to work unchanged.
+- `name_fn` — optional callable `row -> String` evaluated at ring level (same
+  `row` as `select`).  When provided, the returned string is stored in the
+  `ShapeGeometry.name` field and used as the filename stem when
+  `split_components = true`.  When `nothing` (default), names are left empty
+  and files are numbered sequentially.
 
-MultiPolygon records are flattened: each outer ring (plus its holes) becomes a
-separate `ShapeGeometry` entry.
+Each exterior ring (plus its holes) becomes one `ShapeGeometry` entry.
 """
-function read_shapefile(path::AbstractString; select = nothing)
+function read_shapefile(path::AbstractString; select = nothing, name_fn = nothing)
   base     = splitext(path)[1]
   shp_path = base * ".shp"
   prj_path = base * ".prj"
@@ -68,20 +113,88 @@ function read_shapefile(path::AbstractString; select = nothing)
   source_crs = isfile(prj_path) ? read(prj_path, String) : nothing
 
   table = Shapefile.Table(shp_path)
+  cols  = _dbf_cols(table)
   geoms = ShapeGeometry[]
+
   for (i, row) in enumerate(table)
-    if !isnothing(select)
-      if select isa AbstractVector
-        i ∈ select || continue
-      else
-        select(row) || continue
-      end
-    end
     shape = Shapefile.shape(row)
     isnothing(shape) && continue
-    append!(geoms, _parse_shape(shape))
+
+    if select isa AbstractVector
+      i ∈ select || continue
+      ring_geoms = _parse_shape(shape)
+      if !isnothing(name_fn)
+        dbf_vals = NamedTuple(c => getproperty(row, c) for c in cols)
+        for (k, g) in enumerate(ring_geoms)
+          rrow = _ring_row(i, k, dbf_vals, g)
+          push!(geoms, ShapeGeometry(g.exterior, g.holes, name_fn(rrow)))
+        end
+      else
+        append!(geoms, ring_geoms)
+      end
+    elseif isnothing(select)
+      ring_geoms = _parse_shape(shape)
+      if !isnothing(name_fn)
+        dbf_vals = NamedTuple(c => getproperty(row, c) for c in cols)
+        for (k, g) in enumerate(ring_geoms)
+          rrow = _ring_row(i, k, dbf_vals, g)
+          push!(geoms, ShapeGeometry(g.exterior, g.holes, name_fn(rrow)))
+        end
+      else
+        append!(geoms, ring_geoms)
+      end
+    else
+      # Callable predicate — evaluate at ring level.
+      ring_geoms = _parse_shape(shape)
+      dbf_vals   = NamedTuple(c => getproperty(row, c) for c in cols)
+      for (k, g) in enumerate(ring_geoms)
+        rrow = _ring_row(i, k, dbf_vals, g)
+        select(rrow) || continue
+        name = isnothing(name_fn) ? "" : name_fn(rrow)
+        push!(geoms, ShapeGeometry(g.exterior, g.holes, name))
+      end
+    end
   end
+
   return geoms, source_crs
+end
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+# DBF column names, excluding the pseudo :geometry column.
+function _dbf_cols(table)
+  filter(!=(:geometry), collect(Tables.columnnames(table)))
+end
+
+# Build a ring-level metadata row (used by list_components and read_shapefile).
+function _ring_row(idx::Int, ring::Int, dbf_vals::NamedTuple, g::ShapeGeometry)
+  pts  = g.exterior.points
+  xmin, xmax, ymin, ymax = _bbox(pts)
+  merge(
+    (idx = idx, ring = ring),
+    dbf_vals,
+    (n_pts = length(pts),
+     area  = _signed_area(pts),
+     xmin  = xmin, xmax = xmax,
+     ymin  = ymin, ymax = ymax),
+  )
+end
+
+# Print a table from a header vector and a vector of string-row vectors.
+function _print_table(headers::Vector{String}, str_rows::Vector{Vector{String}};
+                      max_w::Int = 24)
+  widths = [min(max_w, max(length(headers[j]),
+                           maximum(length(r[j]) for r in str_rows; init = 0)))
+            for j in eachindex(headers)]
+  fmt(s, w) = rpad(first(s, w), w)
+  hline = join((fmt(headers[j], widths[j]) for j in eachindex(headers)), "  ")
+  println(hline)
+  println("─"^length(hline))
+  for row in str_rows
+    println(join((fmt(row[j], widths[j]) for j in eachindex(headers)), "  "))
+  end
 end
 
 # ---------------------------------------------------------------------------
