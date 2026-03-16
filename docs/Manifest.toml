@@ -575,7 +575,7 @@ version = "0.13.3"
 deps = ["Gmsh", "Printf", "Proj", "Shapefile", "Tables"]
 path = ".."
 uuid = "2e053855-5844-441f-8c9c-7f6fb193f5ff"
-version = "1.0.0-DEV"
+version = "0.0.1"
 
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
