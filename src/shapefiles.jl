@@ -1,15 +1,66 @@
 """
-    read_shapefile(path) -> (Vector{ShapeGeometry}, Union{String,Nothing})
+    list_components(path) -> Vector{NamedTuple}
+
+Print a formatted table of the attribute metadata for every record in the
+Shapefile at `path` (reads the `.dbf` sidecar; no geometry is loaded).
+
+Each printed row corresponds to one Shapefile record and shows an `idx` column
+(1-based, for use with the `select` kwarg of `read_shapefile`) followed by all
+DBF attribute columns.  Column values longer than 24 characters are truncated.
+
+Returns a `Vector{NamedTuple}` (with `:idx` prepended) for programmatic use.
+"""
+function list_components(path::AbstractString)
+  base  = splitext(path)[1]
+  table = Shapefile.Table(base * ".shp")
+  cols  = filter(!=(:geometry), collect(Tables.columnnames(table)))
+
+  # Collect all metadata rows as NamedTuples.
+  meta = NamedTuple[]
+  for (i, row) in enumerate(table)
+    push!(meta, (; :idx => i, (c => getproperty(row, c) for c in cols)...))
+  end
+  isempty(meta) && return meta
+
+  # Build string matrix for display.
+  headers   = ["idx"; string.(cols)]
+  str_rows  = [[string(r.idx); [string(r[c]) for c in cols]] for r in meta]
+  MAX_W     = 24
+  widths    = [min(MAX_W, max(length(headers[j]),
+                             maximum(length(row[j]) for row in str_rows)))
+               for j in eachindex(headers)]
+
+  fmt(s, w) = rpad(first(s, w), w)
+  header_line = join((fmt(headers[j], widths[j]) for j in eachindex(headers)), "  ")
+  println(header_line)
+  println("─"^length(header_line))
+  for row in str_rows
+    println(join((fmt(row[j], widths[j]) for j in eachindex(headers)), "  "))
+  end
+
+  return meta
+end
+
+"""
+    read_shapefile(path; select = nothing) -> (Vector{ShapeGeometry}, Union{String,Nothing})
 
 Read a Shapefile and return a vector of geometries plus the raw WKT string
 from the `.prj` sidecar file, or `nothing` if no `.prj` is found.
 
 `path` may include or omit the `.shp` extension.
 
+# Keyword arguments
+- `select` — restrict which records are loaded:
+  - `nothing` (default): load all records.
+  - `AbstractVector{Int}`: 1-based row indices to keep (as shown by
+    `list_components`).
+  - A callable `row -> Bool`: predicate on the DBF row; only records for
+    which the predicate returns `true` are loaded.
+
 MultiPolygon records are flattened: each outer ring (plus its holes) becomes a
 separate `ShapeGeometry` entry.
 """
-function read_shapefile(path::AbstractString)
+function read_shapefile(path::AbstractString; select = nothing)
   base     = splitext(path)[1]
   shp_path = base * ".shp"
   prj_path = base * ".prj"
@@ -18,7 +69,14 @@ function read_shapefile(path::AbstractString)
 
   table = Shapefile.Table(shp_path)
   geoms = ShapeGeometry[]
-  for row in table
+  for (i, row) in enumerate(table)
+    if !isnothing(select)
+      if select isa AbstractVector
+        i ∈ select || continue
+      else
+        select(row) || continue
+      end
+    end
     shape = Shapefile.shape(row)
     isnothing(shape) && continue
     append!(geoms, _parse_shape(shape))

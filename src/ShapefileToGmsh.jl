@@ -3,6 +3,7 @@ module ShapefileToGmsh
 using Shapefile
 using Printf
 import Proj
+import Tables
 
 include("geometry.jl")
 include("shapefiles.jl")
@@ -48,6 +49,7 @@ function shapefile_to_geo(
   input_path  :: AbstractString,
   output_name :: AbstractString;
   proj_method       :: Union{String,Proj.Transformation,Nothing} = "EPSG:3857",
+  select                                                         = nothing,
   edge_length_range :: Union{Tuple{Real,Real},Nothing}           = nothing,
   coarsen_strategy  :: Symbol                                    = :iterative,
   bbox_size         :: Union{Real,Nothing}                       = nothing,
@@ -55,7 +57,7 @@ function shapefile_to_geo(
   mesh_algorithm    :: Union{Int,Nothing}                        = nothing,
   split_components  :: Bool                                      = false,
 )
-  geoms, source_crs = read_shapefile(input_path)
+  geoms, source_crs = read_shapefile(input_path; select)
 
   if !isnothing(proj_method)
     geoms = project_to_meters(geoms, source_crs; target = proj_method)
@@ -94,6 +96,7 @@ function shapefile_to_msh(
   input_path  :: AbstractString,
   output_name :: AbstractString;
   proj_method       :: Union{String,Proj.Transformation,Nothing} = "EPSG:3857",
+  select                                                         = nothing,
   edge_length_range :: Union{Tuple{Real,Real},Nothing}           = nothing,
   coarsen_strategy  :: Symbol                                    = :iterative,
   bbox_size         :: Union{Real,Nothing}                       = nothing,
@@ -103,7 +106,7 @@ function shapefile_to_msh(
   recombine         :: Bool                                      = false,
   split_components  :: Bool                                      = false,
 )
-  geoms, source_crs = read_shapefile(input_path)
+  geoms, source_crs = read_shapefile(input_path; select)
 
   if !isnothing(proj_method)
     geoms = project_to_meters(geoms, source_crs; target = proj_method)
@@ -130,7 +133,7 @@ end
 
 export ShapeGeometry, Contour, npoints, nedges
 
-export read_shapefile
+export read_shapefile, list_components
 
 export project_to_meters, rescale
 
