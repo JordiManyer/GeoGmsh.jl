@@ -19,7 +19,7 @@ function run()
   xs = [GI.x(p) for p in GI.getpoint(GI.getexterior(proj))]
   @test all(x -> 1.0e6 < x < 2.0e6, xs)
 
-  # rescale: works on ingested ShapeGeometry
+  # rescale: works on ingested Geometry2D
   geoms  = ingest(proj)
   scaled = rescale(geoms, 100.0)
   pts = scaled[1].exterior.points

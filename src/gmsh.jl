@@ -12,7 +12,7 @@ Orientation convention (required by Gmsh):
 - Exterior curve loops are CCW (positive signed area).
 - Hole curve loops are CW (Gmsh subtracts them from the surface).
 
-Because `ShapeGeometry` already normalises ring orientation (see `shapefiles.jl`),
+Because `Geometry2D` already normalises ring orientation (see `shapefiles.jl`),
 lines are always written in the stored point order and curve loops always use
 positive line indices.
 """
@@ -33,7 +33,7 @@ Write `geoms` to a Gmsh `.geo` script.  `name` should be given **without** the
 When `split_components = false` (default), all geometries are written into a
 single file `name.geo`.
 
-When `split_components = true`, one `.geo` file per `ShapeGeometry` is written
+When `split_components = true`, one `.geo` file per `Geometry2D` is written
 into a directory named `name/`.  Files inside are named `1.geo`, `2.geo`, … .
 
 # Keyword arguments
@@ -44,7 +44,7 @@ into a directory named `name/`.  Files inside are named `1.geo`, `2.geo`, … .
 - `split_components` — write one file per geometry component (default `false`).
 """
 function write_geo(
-  geoms            :: Vector{ShapeGeometry},
+  geoms            :: Vector{Geometry2D},
   name             :: AbstractString;
   mesh_size        :: Real               = 1.0,
   mesh_algorithm   :: Union{Int,Nothing} = nothing,
@@ -77,7 +77,7 @@ end
 Build the geometry with the Gmsh API, generate a 2-D mesh, and write a `.msh`
 file.  `name` should be given **without** the `.msh` extension.
 
-When `split_components = true`, one `.msh` file per `ShapeGeometry` is written
+When `split_components = true`, one `.msh` file per `Geometry2D` is written
 into a directory named `name/`.
 
 # Keyword arguments
@@ -91,7 +91,7 @@ into a directory named `name/`.
 - `split_components` — write one file per geometry component (default `false`).
 """
 function generate_mesh(
-  geoms            :: Vector{ShapeGeometry},
+  geoms            :: Vector{Geometry2D},
   name             :: AbstractString;
   mesh_size        :: Real               = 1.0,
   mesh_algorithm   :: Union{Int,Nothing} = nothing,
@@ -117,7 +117,7 @@ end
 # ============================================================================
 
 function _write_geo_single(
-  geoms          :: Vector{ShapeGeometry},
+  geoms          :: Vector{Geometry2D},
   path           :: AbstractString;
   mesh_size      :: Real,
   mesh_algorithm,
@@ -137,7 +137,7 @@ function _write_geo_single(
 end
 
 function _write_geo_split(
-  geoms          :: Vector{ShapeGeometry},
+  geoms          :: Vector{Geometry2D},
   name           :: AbstractString;
   mesh_size      :: Real,
   mesh_algorithm,
@@ -232,7 +232,7 @@ end
 # ============================================================================
 
 function _generate_mesh_single(
-  geoms          :: Vector{ShapeGeometry},
+  geoms          :: Vector{Geometry2D},
   path           :: AbstractString;
   mesh_size,
   mesh_algorithm,
@@ -284,7 +284,7 @@ function _generate_mesh_single(
 end
 
 function _generate_mesh_split(
-  geoms          :: Vector{ShapeGeometry},
+  geoms          :: Vector{Geometry2D},
   name           :: AbstractString;
   mesh_size,
   mesh_algorithm,
@@ -317,7 +317,7 @@ function _generate_mesh_split(
   end
 end
 
-# Add one ShapeGeometry to the active Gmsh model; return updated counters.
+# Add one Geometry2D to the active Gmsh model; return updated counters.
 function _add_geometry(g, pt_id, line_id, loop_id, surf_id, lc)
   pt_id, line_id, loop_id, ext_loop_id = _add_ring(g.exterior, pt_id, line_id, loop_id, lc)
 
@@ -358,4 +358,221 @@ function _add_ring(c, pt_id, line_id, loop_id, lc)
   gmsh.model.geo.addCurveLoop(line_ids, loop_id)
 
   return pt_id, line_id, loop_id, loop_id
+end
+
+# ============================================================================
+# 3D overloads — Geometry3D
+# ============================================================================
+
+"""
+    write_geo(geoms, name; kwargs...)
+
+`Geometry3D` overload: writes boundary points with their terrain elevation
+(non-zero z). Interior elevation is not encoded in the `.geo` file — use
+[`generate_mesh`](@ref) with a `DEMRaster` to lift interior mesh nodes.
+
+Keyword arguments are identical to the 2D version.
+"""
+function write_geo(
+  geoms            :: Vector{Geometry3D},
+  name             :: AbstractString;
+  mesh_size        :: Real               = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing} = nothing,
+  split_components :: Bool               = false,
+  verbose          :: Bool               = false,
+)
+  if split_components
+    mkpath(name)
+    n  = length(geoms)
+    nd = ndigits(n)
+    for (i, g) in enumerate(geoms)
+      bname = (isempty(g.base.name) ? lpad(i, nd, '0') : g.base.name) * ".geo"
+      _write_geo_single_3d([g], joinpath(name, bname); mesh_size, mesh_algorithm)
+    end
+  else
+    _write_geo_single_3d(geoms, name * ".geo"; mesh_size, mesh_algorithm)
+    verbose && println("  Written    : ", name, ".geo")
+  end
+  return name
+end
+
+"""
+    generate_mesh(geoms, dem, name; kwargs...) -> String
+
+`Geometry3D` overload: generates a terrain-following surface mesh.
+
+Meshes the 2D domain flat, then lifts every node's z-coordinate by sampling
+`dem` at its (x, y) position. The DEM and the 2D geometries must be in the
+same CRS.
+
+Keyword arguments are identical to the 2D version.
+"""
+function generate_mesh(
+  geoms            :: Vector{Geometry3D},
+  dem              :: DEMRaster,
+  name             :: AbstractString;
+  mesh_size        :: Real               = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing} = nothing,
+  order            :: Int                = 1,
+  recombine        :: Bool               = false,
+  split_components :: Bool               = false,
+  verbose          :: Bool               = false,
+)
+  if split_components
+    mkpath(name)
+    n  = length(geoms)
+    nd = ndigits(n)
+    for (i, g) in enumerate(geoms)
+      bname = (isempty(g.base.name) ? lpad(i, nd, '0') : g.base.name) * ".msh"
+      _generate_mesh_single_3d([g], dem, joinpath(name, bname);
+        mesh_size, mesh_algorithm, order, recombine)
+      verbose && @printf("  [%*d / %d]  %s\n", nd, i, n, bname)
+    end
+  else
+    stats = _generate_mesh_single_3d(geoms, dem, name * ".msh";
+      mesh_size, mesh_algorithm, order, recombine)
+    if verbose
+      println("  Nodes      : $(_fmt(stats.nodes))   Elements : $(_fmt(stats.elements))")
+      println("  Written    : ", name, ".msh")
+    end
+  end
+  return name
+end
+
+# ---------------------------------------------------------------------------
+# 3D internals
+# ---------------------------------------------------------------------------
+
+function _write_geo_single_3d(
+  geoms          :: Vector{Geometry3D},
+  path           :: AbstractString;
+  mesh_size      :: Real,
+  mesh_algorithm,
+)
+  lc = Float64(mesh_size)
+  open(path, "w") do io
+    _write_header(io, length(geoms), mesh_algorithm)
+    pt_id = line_id = loop_id = surf_id = 1
+    for g in geoms
+      pt_id, line_id, loop_id, surf_id =
+        _write_geometry_3d(io, g, pt_id, line_id, loop_id, surf_id, lc)
+    end
+  end
+end
+
+function _write_geometry_3d(io, g::Geometry3D, pt_id, line_id, loop_id, surf_id, lc)
+  ext_line_ids, pt_id, line_id =
+    _write_contour_3d(io, g.base.exterior, g.z_exterior, pt_id, line_id, lc, "exterior")
+  ext_loop_id = loop_id
+  println(io, "Curve Loop($loop_id) = {$(join(ext_line_ids, ", "))};")
+  loop_id += 1
+
+  hole_loop_ids = Int[]
+  for (k, (hole, z_hole)) in enumerate(zip(g.base.holes, g.z_holes))
+    hole_line_ids, pt_id, line_id =
+      _write_contour_3d(io, hole, z_hole, pt_id, line_id, lc, "hole $k")
+    cw_ids = reverse(-1 .* hole_line_ids)
+    println(io, "Curve Loop($loop_id) = {$(join(cw_ids, ", "))};")
+    push!(hole_loop_ids, loop_id)
+    loop_id += 1
+  end
+
+  all_loops = vcat(ext_loop_id, hole_loop_ids)
+  # Use Plane Surface; Gmsh will project to best-fit plane for non-flat domains.
+  println(io, "Plane Surface($surf_id) = {$(join(all_loops, ", "))};")
+  surf_id += 1
+  println(io)
+
+  return pt_id, line_id, loop_id, surf_id
+end
+
+function _write_contour_3d(
+  io      :: IO,
+  c       :: Contour,
+  z_vals  :: Vector{Float64},
+  pt_id   :: Int,
+  line_id :: Int,
+  lc      :: Float64,
+  label   :: AbstractString,
+)
+  pts = c.points
+  n   = length(pts)
+  println(io, "// $label ($n points, terrain z)")
+
+  first_pt_id = pt_id
+  for (pt, z) in zip(pts, z_vals)
+    @printf(io, "Point(%d) = {%.15g, %.15g, %.15g, %.15g};\n",
+            pt_id, pt[1], pt[2], z, lc)
+    pt_id += 1
+  end
+
+  nedges_n = c.closed ? n : n - 1
+  line_ids = Int[]
+  for i in 1:nedges_n
+    p_start = first_pt_id + i - 1
+    p_end   = c.closed ? first_pt_id + mod(i, n) : first_pt_id + i
+    println(io, "Line($line_id) = {$p_start, $p_end};")
+    push!(line_ids, line_id)
+    line_id += 1
+  end
+  println(io)
+
+  return line_ids, pt_id, line_id
+end
+
+function _generate_mesh_single_3d(
+  geoms          :: Vector{Geometry3D},
+  dem            :: DEMRaster,
+  path           :: AbstractString;
+  mesh_size,
+  mesh_algorithm,
+  order,
+  recombine,
+) :: NamedTuple
+  lc = Float64(mesh_size)
+  gmsh.initialize()
+  try
+    gmsh.option.setNumber("General.Verbosity", 2)
+    gmsh.model.add("GeoGmsh3D")
+
+    # Build flat 2D geometry (z=0) from the 2D base of each Geometry3D.
+    pt_id = line_id = loop_id = surf_id = 0
+    for g in geoms
+      pt_id, line_id, loop_id, surf_id =
+        _add_geometry(g.base, pt_id, line_id, loop_id, surf_id, lc)
+    end
+
+    gmsh.model.geo.synchronize()
+
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+    !isnothing(mesh_algorithm) &&
+      gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
+    recombine && gmsh.option.setNumber("Mesh.RecombineAll", 1)
+
+    gmsh.model.mesh.generate(2)
+    order > 1 && gmsh.model.mesh.setOrder(order)
+
+    # Lift every mesh node's z-coordinate by sampling the DEM.
+    node_tags, coords, _ = gmsh.model.mesh.getNodes()
+    n = length(node_tags)
+    pts = NTuple{2,Float64}[(coords[3i-2], coords[3i-1]) for i in 1:n]
+    elevations = sample_elevation(pts, dem)
+    for i in 1:n
+      gmsh.model.mesh.setNode(
+        node_tags[i],
+        [coords[3i-2], coords[3i-1], elevations[i]],
+        Float64[],
+      )
+    end
+
+    gmsh.write(path)
+
+    node_tags2, _, _  = gmsh.model.mesh.getNodes()
+    _, elem_tags, _   = gmsh.model.mesh.getElements(2)
+    return (; nodes    = length(node_tags2),
+              elements = sum(length(t) for t in elem_tags; init = 0))
+  finally
+    gmsh.finalize()
+  end
 end

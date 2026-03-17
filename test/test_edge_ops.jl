@@ -12,10 +12,10 @@ function _dense_circle_poly(n::Int, R::Float64 = 50_000.0)
   GI.Polygon([GI.LinearRing(pts)])
 end
 
-# Dense circle as ShapeGeometry (for filter_components tests).
+# Dense circle as Geometry2D (for filter_components tests).
 function _dense_circle_shape(n::Int, R::Float64 = 1.0)
   pts = NTuple{2,Float64}[(R * cos(2π * i / n), R * sin(2π * i / n)) for i in 0:n-1]
-  ShapeGeometry(Contour(pts, true), Contour[])
+  Geometry2D(Contour(pts, true), Contour[])
 end
 
 function run()
@@ -51,7 +51,7 @@ end
 
 function _test_filter()
   # A 3-point triangle should be dropped by filter_components (min_points=4).
-  tri = ShapeGeometry(
+  tri = Geometry2D(
     Contour(NTuple{2,Float64}[(0.0,0.0),(1.0,0.0),(0.5,1.0)], true),
     Contour[],
   )
@@ -64,7 +64,7 @@ function _test_filter()
   @test length(filter_components([tri, square]; min_points = 3)) == 2
 
   # Degenerate hole removed, exterior kept.
-  tri_hole = ShapeGeometry(
+  tri_hole = Geometry2D(
     square.exterior,
     [Contour(NTuple{2,Float64}[(0.0,0.0),(0.1,0.0),(0.05,0.1)], true)],
   )

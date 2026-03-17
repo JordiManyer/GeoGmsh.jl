@@ -5,7 +5,7 @@ using Test
 
 # A small synthetic square (10 km side) so meshing is fast.
 const _SIDE  = 10_000.0
-const _SQUARE = ShapeGeometry(
+const _SQUARE = Geometry2D(
   Contour([(0.0,0.0),(0.0,_SIDE),(_SIDE,_SIDE),(_SIDE,0.0)], true),
   Contour[],
 )
@@ -30,7 +30,7 @@ function run()
 
   # Split-components output.
   two_squares = [_SQUARE,
-    ShapeGeometry(
+    Geometry2D(
       Contour([(20_000.0,0.0),(20_000.0,_SIDE),(20_000.0+_SIDE,_SIDE),(20_000.0+_SIDE,0.0)], true),
       Contour[],
     )]

@@ -1,11 +1,11 @@
 """
-    ingest(geom) -> Vector{ShapeGeometry}
+    ingest(geom) -> Vector{Geometry2D}
 
 Convert any GeoInterface-compatible geometry to our internal representation.
 
 Accepted inputs:
 - Any `GI.PolygonTrait` geometry (single polygon)
-- Any `GI.MultiPolygonTrait` geometry (split into one `ShapeGeometry` each)
+- Any `GI.MultiPolygonTrait` geometry (split into one `Geometry2D` each)
 - Any `GI.FeatureTrait` (geometry is extracted; properties are dropped)
 - Any `GI.FeatureCollectionTrait` (all features ingested and concatenated)
 - A `DataFrame` with a geometry column (as returned by `read_geodata`)
@@ -14,7 +14,7 @@ Ring orientation is normalised: exterior rings → CCW, hole rings → CW.
 Coordinates are always converted to `Float64`.
 Closing points (repeated first point) are removed automatically.
 """
-function ingest(geom) :: Vector{ShapeGeometry}
+function ingest(geom) :: Vector{Geometry2D}
   # GeoInterface uses isfeature/isfeaturecollection rather than geomtrait
   # for Feature and FeatureCollection types.
   if GI.isfeaturecollection(geom)
@@ -26,9 +26,9 @@ function ingest(geom) :: Vector{ShapeGeometry}
   end
 end
 
-function ingest(df::DataFrames.AbstractDataFrame) :: Vector{ShapeGeometry}
+function ingest(df::DataFrames.AbstractDataFrame) :: Vector{Geometry2D}
   col = first(GI.geometrycolumns(df))
-  result = ShapeGeometry[]
+  result = Geometry2D[]
   for row in eachrow(df)
     g = row[col]
     isnothing(g) && continue
@@ -42,7 +42,7 @@ end
 # ---------------------------------------------------------------------------
 
 function _ingest(::GI.PolygonTrait, geom)
-  ShapeGeometry[_polygon_to_shape(geom)]
+  Geometry2D[_polygon_to_shape(geom)]
 end
 
 function _ingest(::GI.MultiPolygonTrait, geom)
@@ -51,11 +51,11 @@ end
 
 function _ingest_feat(feat)
   g = GI.geometry(feat)
-  isnothing(g) ? ShapeGeometry[] : ingest(g)
+  isnothing(g) ? Geometry2D[] : ingest(g)
 end
 
 function _ingest_fc(fc)
-  result = ShapeGeometry[]
+  result = Geometry2D[]
   for i in 1:GI.nfeature(fc)
     append!(result, ingest(GI.getfeature(fc, i)))
   end
@@ -64,7 +64,7 @@ end
 
 function _ingest(trait, geom)
   @warn "ingest: unsupported geometry type $(typeof(trait)); skipping."
-  return ShapeGeometry[]
+  return Geometry2D[]
 end
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ end
 
 # Convert any GI ring (LinearRingTrait or LineStringTrait) to a
 # normalised Contour with the requested orientation (:ccw or :cw).
-function _polygon_to_shape(poly) :: ShapeGeometry
+function _polygon_to_shape(poly) :: Geometry2D
   ext_pts  = _pts_from_ring(GI.getexterior(poly))
   hole_pts = [_pts_from_ring(GI.gethole(poly, i)) for i in 1:GI.nhole(poly)]
 
@@ -81,7 +81,7 @@ function _polygon_to_shape(poly) :: ShapeGeometry
   holes    = [Contour(_orient(h, :cw), true) for h in hole_pts
               if length(h) >= 3]
 
-  return ShapeGeometry(exterior, holes)
+  return Geometry2D(exterior, holes)
 end
 
 # Extract NTuple{2,Float64} points from any GI ring, stripping the

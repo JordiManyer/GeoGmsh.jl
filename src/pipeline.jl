@@ -86,6 +86,97 @@ function geoms_to_msh(
 end
 
 # ---------------------------------------------------------------------------
+# 3D terrain pipeline
+# ---------------------------------------------------------------------------
+
+"""
+    geoms_to_geo_3d(geom, dem_path, output_name; kwargs...) -> String
+
+Terrain-aware variant of [`geoms_to_geo`](@ref): runs the standard 2D
+pipeline, reads the DEM at `dem_path`, lifts boundary points to terrain
+elevation, and writes a `.geo` file with 3D point coordinates.
+
+The DEM must be in the same CRS as the (reprojected) vector data.
+
+All 2D keyword arguments are supported. Additional argument:
+- `nodata_fill` — elevation substituted for out-of-bounds or nodata cells
+                  (default `0.0`).
+"""
+function geoms_to_geo_3d(
+  geom,
+  dem_path     :: AbstractString,
+  output_name  :: AbstractString;
+  nodata_fill  :: Real = 0.0,
+  verbose      :: Bool = true,
+  kwargs...,
+)
+  geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
+  geoms2d = _run_pipeline(geom_raw, source_crs;
+    target_crs      = get(kwargs, :target_crs,      "EPSG:3857"),
+    simplify_tol    = get(kwargs, :simplify_tol,    nothing),
+    max_edge_length = get(kwargs, :max_edge_length,  nothing),
+    bbox_size       = get(kwargs, :bbox_size,        nothing),
+    verbose,
+  )
+  verbose && println("\nReading DEM: ", dem_path)
+  dem    = read_dem(dem_path)
+  geoms3d = lift_to_3d(geoms2d, dem; nodata_fill = Float64(nodata_fill))
+  verbose && println("\nWriting: ", output_name, ".geo")
+  write_geo(geoms3d, output_name;
+    mesh_size      = get(kwargs, :mesh_size,      1.0),
+    mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
+    split_components = get(kwargs, :split_components, false),
+    verbose,
+  )
+  return output_name
+end
+
+"""
+    geoms_to_msh_3d(geom, dem_path, output_name; kwargs...) -> String
+
+Terrain-aware variant of [`geoms_to_msh`](@ref): runs the standard 2D
+pipeline to generate a flat mesh, then lifts every mesh node's z-coordinate
+by sampling `dem_path` at its (x, y) position.
+
+The DEM must be in the same CRS as the (reprojected) vector data.
+
+All 2D keyword arguments are supported. Additional argument:
+- `nodata_fill` — elevation substituted for out-of-bounds or nodata cells
+                  (default `0.0`).
+"""
+function geoms_to_msh_3d(
+  geom,
+  dem_path     :: AbstractString,
+  output_name  :: AbstractString;
+  nodata_fill  :: Real = 0.0,
+  verbose      :: Bool = true,
+  kwargs...,
+)
+  geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
+  geoms2d = _run_pipeline(geom_raw, source_crs;
+    target_crs      = get(kwargs, :target_crs,      "EPSG:3857"),
+    simplify_tol    = get(kwargs, :simplify_tol,    nothing),
+    max_edge_length = get(kwargs, :max_edge_length,  nothing),
+    bbox_size       = get(kwargs, :bbox_size,        nothing),
+    verbose,
+  )
+  verbose && println("\nReading DEM: ", dem_path)
+  dem     = read_dem(dem_path)
+  geoms3d = lift_to_3d(geoms2d, dem; nodata_fill = Float64(nodata_fill))
+  verbose && println("\nMeshing (3D): ", length(geoms3d), " component(s) → ",
+                     output_name, ".msh")
+  generate_mesh(geoms3d, dem, output_name;
+    mesh_size      = get(kwargs, :mesh_size,      1.0),
+    mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
+    order          = get(kwargs, :order,          1),
+    recombine      = get(kwargs, :recombine,      false),
+    split_components = get(kwargs, :split_components, false),
+    verbose,
+  )
+  return output_name
+end
+
+# ---------------------------------------------------------------------------
 # Backward-compatible wrappers
 # ---------------------------------------------------------------------------
 

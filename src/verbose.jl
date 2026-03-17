@@ -39,7 +39,7 @@ struct _GeomSummary
   ymax :: Float64
 end
 
-function _geom_summary(geoms::Vector{ShapeGeometry}) :: _GeomSummary
+function _geom_summary(geoms::Vector{Geometry2D}) :: _GeomSummary
   if isempty(geoms)
     return _GeomSummary(0, 0, 0.0, 0.0, 0.0, 0.0)
   end

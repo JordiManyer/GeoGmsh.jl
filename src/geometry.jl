@@ -12,21 +12,21 @@ struct Contour
 end
 
 """
-    ShapeGeometry
+    Geometry2D
 
 A single polygon: an exterior ring plus zero or more hole rings.
 All rings are stored as `Contour` with `closed = true`.
 Exterior rings are oriented CCW (positive signed area);
 hole rings are oriented CW (negative signed area).
 """
-struct ShapeGeometry
+struct Geometry2D
   exterior::Contour
   holes::Vector{Contour}
   name::String
 end
 
-ShapeGeometry(exterior::Contour, holes::Vector{Contour}) =
-  ShapeGeometry(exterior, holes, "")
+Geometry2D(exterior::Contour, holes::Vector{Contour}) =
+  Geometry2D(exterior, holes, "")
 
 # ---------------------------------------------------------------------------
 # GeoInterface traits
@@ -34,11 +34,11 @@ ShapeGeometry(exterior::Contour, holes::Vector{Contour}) =
 
 import GeoInterface as GI
 
-GI.isgeometry(::Type{ShapeGeometry}) = true
-GI.geomtrait(::ShapeGeometry)        = GI.PolygonTrait()
-GI.nhole(::GI.PolygonTrait, g::ShapeGeometry)        = length(g.holes)
-GI.getexterior(::GI.PolygonTrait, g::ShapeGeometry)  = g.exterior
-GI.gethole(::GI.PolygonTrait, g::ShapeGeometry, i)   = g.holes[i]
+GI.isgeometry(::Type{Geometry2D}) = true
+GI.geomtrait(::Geometry2D)        = GI.PolygonTrait()
+GI.nhole(::GI.PolygonTrait, g::Geometry2D)        = length(g.holes)
+GI.getexterior(::GI.PolygonTrait, g::Geometry2D)  = g.exterior
+GI.gethole(::GI.PolygonTrait, g::Geometry2D, i)   = g.holes[i]
 
 GI.isgeometry(::Type{Contour}) = true
 GI.geomtrait(::Contour)        = GI.LinearRingTrait()
@@ -58,10 +58,33 @@ npoints(c::Contour) = length(c.points)
 nedges(c::Contour) = c.closed ? npoints(c) : npoints(c) - 1
 
 """Total number of points across exterior + holes."""
-function npoints(g::ShapeGeometry)
+function npoints(g::Geometry2D)
   n = npoints(g.exterior)
   for h in g.holes
     n += npoints(h)
   end
   return n
+end
+
+# ---------------------------------------------------------------------------
+# Geometry3D
+# ---------------------------------------------------------------------------
+
+"""
+    Geometry3D
+
+A terrain-aware 2+1D polygon: a `Geometry2D` base (2D boundary topology)
+combined with per-point elevation sampled from a DEM raster.
+
+`z_exterior` holds one elevation value per point in `base.exterior`.
+`z_holes[k]` holds one elevation value per point in `base.holes[k]`.
+
+`Geometry3D` objects are always derived from a `Geometry2D` + a DEM raster
+via [`lift_to_3d`](@ref).  They are never constructed from native 3D vector
+data (which does not exist in standard geospatial formats).
+"""
+struct Geometry3D
+  base       :: Geometry2D
+  z_exterior :: Vector{Float64}
+  z_holes    :: Vector{Vector{Float64}}
 end
