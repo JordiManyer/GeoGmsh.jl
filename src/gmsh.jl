@@ -93,12 +93,12 @@ into a directory named `name/`.
 function generate_mesh(
   geoms            :: Vector{Geometry2D},
   name             :: AbstractString;
-  mesh_size        :: Real               = 1.0,
-  mesh_algorithm   :: Union{Int,Nothing} = nothing,
-  order            :: Int                = 1,
-  recombine        :: Bool               = false,
-  split_components :: Bool               = false,
-  verbose          :: Bool               = false,
+  mesh_size        :: Union{Real,AdaptivityAlgorithm} = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing}              = nothing,
+  order            :: Int                             = 1,
+  recombine        :: Bool                            = false,
+  split_components :: Bool                            = false,
+  verbose          :: Bool                            = false,
 )
   if split_components
     _generate_mesh_split(geoms, name; mesh_size, mesh_algorithm, order, recombine, verbose)
@@ -110,6 +110,33 @@ function generate_mesh(
     end
   end
   return name
+end
+
+# ============================================================================
+# Mesh-size helpers (uniform Real vs. AdaptivityAlgorithm)
+# ============================================================================
+
+# Characteristic length to pass to Gmsh point entities.
+_point_lc(ms::Real)               = Float64(ms)
+_point_lc(ms::AdaptivityAlgorithm) = nominal_size(ms)
+
+# Apply mesh-size settings after geometry synchronisation.
+# For a plain Real: pin CharacteristicLengthMin == Max == lc.
+# For an AdaptivityAlgorithm: set loose bounds and install a background field.
+function _setup_mesh_size!(ms::Real, _dem, _curve_tags)
+  lc = Float64(ms)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+end
+
+function _setup_mesh_size!(ms::AdaptivityAlgorithm, dem, curve_tags)
+  lc_max = nominal_size(ms)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 0.0)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc_max)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 0)
+  gmsh.option.setNumber("Mesh.CharacteristicLengthExtendFromBoundary", 0)
+  field_tag = apply_adaptivity!(ms, dem, curve_tags)
+  isnothing(field_tag) || gmsh.model.mesh.field.setAsBackgroundMesh(field_tag)
 end
 
 # ============================================================================
@@ -239,7 +266,7 @@ function _generate_mesh_single(
   order,
   recombine,
 ) :: NamedTuple
-  lc = Float64(mesh_size)
+  lc = _point_lc(mesh_size)
   gmsh.initialize()
   try
     gmsh.option.setNumber("General.Verbosity", 2)   # warnings + errors only
@@ -256,8 +283,8 @@ function _generate_mesh_single(
 
     gmsh.model.geo.synchronize()
 
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+    curve_tags = Int[t for (_, t) in gmsh.model.getEntities(1)]
+    _setup_mesh_size!(mesh_size, nothing, curve_tags)
     if !isnothing(mesh_algorithm)
       gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
     end
@@ -411,12 +438,12 @@ function generate_mesh(
   geoms            :: Vector{Geometry3D},
   dem              :: DEMRaster,
   name             :: AbstractString;
-  mesh_size        :: Real               = 1.0,
-  mesh_algorithm   :: Union{Int,Nothing} = nothing,
-  order            :: Int                = 1,
-  recombine        :: Bool               = false,
-  split_components :: Bool               = false,
-  verbose          :: Bool               = false,
+  mesh_size        :: Union{Real,AdaptivityAlgorithm} = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing}              = nothing,
+  order            :: Int                             = 1,
+  recombine        :: Bool                            = false,
+  split_components :: Bool                            = false,
+  verbose          :: Bool                            = false,
 )
   if split_components
     mkpath(name)
@@ -559,12 +586,12 @@ function generate_mesh_volume(
   geoms            :: Vector{Geometry3D},
   dem              :: DEMRaster,
   name             :: AbstractString;
-  depth            :: Union{Real,Nothing} = nothing,
-  z_bottom         :: Union{Real,Nothing} = nothing,
-  mesh_size        :: Real               = 1.0,
-  mesh_algorithm   :: Union{Int,Nothing} = nothing,
-  split_components :: Bool               = false,
-  verbose          :: Bool               = false,
+  depth            :: Union{Real,Nothing}              = nothing,
+  z_bottom         :: Union{Real,Nothing}              = nothing,
+  mesh_size        :: Union{Real,AdaptivityAlgorithm}  = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing}               = nothing,
+  split_components :: Bool                             = false,
+  verbose          :: Bool                             = false,
 )
   if isnothing(depth) && isnothing(z_bottom)
     error("Either `depth` or `z_bottom` must be specified.")
@@ -611,7 +638,7 @@ function _generate_mesh_volume_single(
   depth    :: Union{Float64,Nothing},
   z_bottom :: Union{Float64,Nothing},
 ) :: NamedTuple
-  lc = Float64(mesh_size)
+  lc = _point_lc(mesh_size)
 
   # ── Step 1: generate flat 2D triangle mesh, capture nodes + connectivity ──
   node_tags_2d   = Vector{Int}()
@@ -630,8 +657,8 @@ function _generate_mesh_volume_single(
     end
     gmsh.model.geo.synchronize()
 
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+    curve_tags = Int[t for (_, t) in gmsh.model.getEntities(1)]
+    _setup_mesh_size!(mesh_size, dem, curve_tags)
     !isnothing(mesh_algorithm) &&
       gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
 
@@ -785,7 +812,7 @@ function _generate_mesh_single_3d(
   order,
   recombine,
 ) :: NamedTuple
-  lc = Float64(mesh_size)
+  lc = _point_lc(mesh_size)
   gmsh.initialize()
   try
     gmsh.option.setNumber("General.Verbosity", 2)
@@ -800,8 +827,8 @@ function _generate_mesh_single_3d(
 
     gmsh.model.geo.synchronize()
 
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+    curve_tags = Int[t for (_, t) in gmsh.model.getEntities(1)]
+    _setup_mesh_size!(mesh_size, dem, curve_tags)
     !isnothing(mesh_algorithm) &&
       gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
     recombine && gmsh.option.setNumber("Mesh.RecombineAll", 1)

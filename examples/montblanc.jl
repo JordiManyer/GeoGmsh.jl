@@ -4,17 +4,15 @@
 # using a user-defined bounding box and a Copernicus GLO-30 Digital Elevation
 # Model:
 #
-# - **Surface mesh** (`geoms_to_msh_3d`): a single terrain-following surface
-#   with z-coordinates sampled from the DEM.
+# - **Surface mesh** (`geoms_to_msh_3d`): a terrain-following surface with
+#   z-coordinates sampled from the DEM.
 # - **Volume mesh** (`geoms_to_msh_3d_volume`): the same surface extruded
 #   downward by `depth` metres to form a solid tetrahedral block.
 #
 # **Features highlighted:**
-# - Defining the domain as a bounding-box GeoJSON polygon (no administrative
-#   boundary needed)
-# - Downloading and mosaicking Copernicus GLO-30 DEM tiles with `GDAL_jll`
+# - `prepare_dem`: one-call DEM download, mosaic, and reproject
 # - `geoms_to_msh_3d` and `geoms_to_msh_3d_volume`
-# - Choosing a UTM CRS so that `mesh_size` and `depth` are in metres
+# - UTM CRS so that `mesh_size` and `depth` are in metres
 #
 # !!! note "Aspect ratio"
 #     The Mont Blanc massif spans ~37 km × ~27 km horizontally but only
@@ -26,8 +24,6 @@
 # | ![Mont Blanc mesh](../assets/montblanc.png) |
 
 using GeoGmsh
-using Downloads
-import GDAL_jll
 
 data_dir = joinpath(@__DIR__, "..", "data")
 mkpath(data_dir)
@@ -42,6 +38,7 @@ mkpath(data_dir)
 
 lon_min, lat_min = 6.73, 45.75
 lon_max, lat_max = 7.10, 45.99
+bbox = (lon_min, lat_min, lon_max, lat_max)
 
 bbox_path = joinpath(data_dir, "montblanc_bbox.geojson")
 open(bbox_path, "w") do io
@@ -62,71 +59,27 @@ open(bbox_path, "w") do io
 """)
 end
 
-# ## Download DEM tiles
+# ## Prepare DEM
 #
-# The Copernicus GLO-30 DEM is distributed as 1°×1° GeoTIFF tiles labelled
-# by their south-west corner.  Tiles are freely available from the public AWS
-# S3 bucket — no authentication required.
-#
-# Our domain sits in the N45 latitude band (45–46°N) and spans longitude
-# columns E006 and E007.
+# `prepare_dem` downloads the required Copernicus GLO-30 tiles (skipping any
+# already on disk), stitches them into a seamless mosaic with `gdalbuildvrt`,
+# and reprojects to UTM zone 32N (EPSG:32632) at 30 m resolution with
+# `gdalwarp` — all in one call.  The domain sits in the N45 latitude band and
+# spans longitude columns E006 and E007, so two tiles are fetched.
 
-tiles = [("N45_00", "E006_00"), ("N45_00", "E007_00")]
-
-const DEM_BASE = "https://copernicus-dem-30m.s3.amazonaws.com"
-
-println("Downloading DEM tiles…")
-tile_paths = String[]
-for (lat, lon) in tiles
-  name = "Copernicus_DSM_COG_10_$(lat)_$(lon)_DEM"
-  url  = "$DEM_BASE/$name/$name.tif"
-  dest = joinpath(data_dir, "$name.tif")
-  if isfile(dest)
-    print("  $name  (cached)\n")
-  else
-    print("  $name  downloading… ")
-    try
-      Downloads.download(url, dest)
-      println("ok")
-    catch e
-      println("FAILED: $e")
-      continue
-    end
-  end
-  push!(tile_paths, dest)
-end
-println("$(length(tile_paths)) tile(s) ready.")
-
-# ## Mosaic and reproject
-#
-# `gdalbuildvrt` stitches the individual tiles into a seamless virtual raster
-# (VRT).  `gdalwarp` then reprojects it to UTM zone 32N (EPSG:32632) at 30 m
-# resolution so that coordinates and elevations share the same unit (metres).
-
-dem_vrt_4326 = joinpath(data_dir, "montblanc_dem_4326.vrt")
-GDAL_jll.gdalbuildvrt_exe() do exe
-  run(`$exe $dem_vrt_4326 $tile_paths`)
-end
-println("Mosaic (EPSG:4326): ", dem_vrt_4326)
-
-dem_tif_utm = joinpath(data_dir, "montblanc_dem_32632.tif")
-if !isfile(dem_tif_utm)
-  println("Reprojecting DEM to EPSG:32632…")
-  GDAL_jll.gdalwarp_exe() do exe
-    run(`$exe -t_srs EPSG:32632 -tr 30 30 -r bilinear
-             -co COMPRESS=DEFLATE
-             $dem_vrt_4326 $dem_tif_utm`)
-  end
-  println("  Saved: ", dem_tif_utm)
-end
+dem_tif_utm = prepare_dem(
+  bbox, "EPSG:32632",
+  joinpath(data_dir, "montblanc_dem_32632.tif");
+  source   = :cop30,
+  dest_dir = data_dir,
+)
 
 # ## 3D terrain meshes
 #
 # `geoms_to_msh_3d` runs the standard 2D pipeline (reproject → simplify →
 # ingest) and then lifts every mesh node's z-coordinate by bilinearly
 # interpolating the DEM at its (x, y) position.
-# `mesh_size = 500.0` gives ~500 m characteristic element length (in metres,
-# consistent with the UTM CRS).
+# `mesh_size = 500.0` gives ~500 m characteristic element length.
 #
 # `geoms_to_msh_3d_volume` does the same but also extrudes the surface
 # downward by `depth` metres to produce a solid tetrahedral mesh.

@@ -75,6 +75,41 @@ function run()
   @test isdir(TMP_NAME)
   @test length(readdir(TMP_NAME)) == length(_SQUARE3D)
   rm(TMP_NAME; recursive = true)
+
+  # ── Adaptivity types ───────────────────────────────────────────────────────
+
+  # Struct construction and nominal_size.
+  sa = SlopeAdaptivity(mesh_size_min = 500.0, mesh_size_max = 2_000.0)
+  @test nominal_size(sa) == 2_000.0
+  @test sa.percentile == 0.95
+
+  bl = BoundaryLayerAdaptivity(mesh_size = 2_000.0, mesh_size_min = 200.0, width = 3_000.0)
+  @test nominal_size(bl) == 2_000.0
+
+  ca = ComposedAdaptivity(sa, bl)
+  @test nominal_size(ca) == 2_000.0
+
+  # BoundaryLayerAdaptivity in a 2D mesh (uses curve tags).
+  generate_mesh([_SQUARE], TMP_NAME;
+    mesh_size = BoundaryLayerAdaptivity(mesh_size = 2_000.0, mesh_size_min = 300.0,
+                                         width = 1_500.0))
+  @test isfile(TMP_NAME * ".msh")
+  rm(TMP_NAME * ".msh")
+
+  # SlopeAdaptivity in a 3D terrain mesh (uses DEM gradient).
+  generate_mesh(_SQUARE3D, _DEM, TMP_NAME;
+    mesh_size = SlopeAdaptivity(mesh_size_min = 500.0, mesh_size_max = 2_000.0))
+  @test isfile(TMP_NAME * ".msh")
+  rm(TMP_NAME * ".msh")
+
+  # ComposedAdaptivity in a 3D terrain mesh.
+  generate_mesh(_SQUARE3D, _DEM, TMP_NAME;
+    mesh_size = ComposedAdaptivity(
+      SlopeAdaptivity(mesh_size_min = 500.0, mesh_size_max = 2_000.0),
+      BoundaryLayerAdaptivity(mesh_size = 2_000.0, mesh_size_min = 300.0, width = 1_500.0),
+    ))
+  @test isfile(TMP_NAME * ".msh")
+  rm(TMP_NAME * ".msh")
 end
 
 end # module

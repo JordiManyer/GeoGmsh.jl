@@ -6,9 +6,8 @@
 # larger area (four DEM tiles) and uses UTM zone 45N.
 #
 # **Features highlighted:**
-# - 3D surface and volume meshing with `geoms_to_msh_3d` and
-#   `geoms_to_msh_3d_volume` over a larger multi-tile domain
-# - Choosing the correct UTM zone for the area of interest (zone 45N for Nepal)
+# - `prepare_dem` with a four-tile domain
+# - `geoms_to_msh_3d` and `geoms_to_msh_3d_volume`
 #
 # !!! note "Aspect ratio"
 #     The domain spans ~84 km × ~66 km horizontally; Everest is 8,849 m tall.
@@ -20,8 +19,6 @@
 # | ![Everest mesh](../assets/everest.png) |
 
 using GeoGmsh
-using Downloads
-import GDAL_jll
 
 data_dir = joinpath(@__DIR__, "..", "data")
 mkpath(data_dir)
@@ -33,6 +30,7 @@ mkpath(data_dir)
 
 lon_min, lat_min = 86.50, 27.66
 lon_max, lat_max = 87.35, 28.26
+bbox = (lon_min, lat_min, lon_max, lat_max)
 
 bbox_path = joinpath(data_dir, "everest_bbox.geojson")
 open(bbox_path, "w") do io
@@ -53,58 +51,18 @@ open(bbox_path, "w") do io
 """)
 end
 
-# ## Download DEM tiles
+# ## Prepare DEM
 #
-# Four 1°×1° tiles cover the padded domain:
-# latitude bands N27 and N28, longitude columns E086 and E087.
+# Four 1°×1° tiles cover the padded domain: latitude bands N27 and N28,
+# longitude columns E086 and E087.  `prepare_dem` downloads, mosaics, and
+# reprojects them to UTM zone 45N (EPSG:32645) in one call.
 
-tiles = [
-  ("N27_00", "E086_00"), ("N27_00", "E087_00"),
-  ("N28_00", "E086_00"), ("N28_00", "E087_00"),
-]
-
-const DEM_BASE = "https://copernicus-dem-30m.s3.amazonaws.com"
-
-println("Downloading DEM tiles…")
-tile_paths = String[]
-for (lat, lon) in tiles
-  name = "Copernicus_DSM_COG_10_$(lat)_$(lon)_DEM"
-  url  = "$DEM_BASE/$name/$name.tif"
-  dest = joinpath(data_dir, "$name.tif")
-  if isfile(dest)
-    print("  $name  (cached)\n")
-  else
-    print("  $name  downloading… ")
-    try
-      Downloads.download(url, dest)
-      println("ok")
-    catch e
-      println("FAILED: $e")
-      continue
-    end
-  end
-  push!(tile_paths, dest)
-end
-println("$(length(tile_paths)) tile(s) ready.")
-
-# ## Mosaic and reproject
-
-dem_vrt_4326 = joinpath(data_dir, "everest_dem_4326.vrt")
-GDAL_jll.gdalbuildvrt_exe() do exe
-  run(`$exe $dem_vrt_4326 $tile_paths`)
-end
-println("Mosaic (EPSG:4326): ", dem_vrt_4326)
-
-dem_tif_utm = joinpath(data_dir, "everest_dem_32645.tif")
-if !isfile(dem_tif_utm)
-  println("Reprojecting DEM to EPSG:32645…")
-  GDAL_jll.gdalwarp_exe() do exe
-    run(`$exe -t_srs EPSG:32645 -tr 30 30 -r bilinear
-             -co COMPRESS=DEFLATE
-             $dem_vrt_4326 $dem_tif_utm`)
-  end
-  println("  Saved: ", dem_tif_utm)
-end
+dem_tif_utm = prepare_dem(
+  bbox, "EPSG:32645",
+  joinpath(data_dir, "everest_dem_32645.tif");
+  source   = :cop30,
+  dest_dir = data_dir,
+)
 
 # ## 3D terrain meshes
 #

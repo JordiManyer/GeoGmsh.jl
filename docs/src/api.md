@@ -25,6 +25,17 @@ AngleFilter
 ComposedAlg
 ```
 
+## Mesh adaptivity
+
+```@docs
+AdaptivityAlgorithm
+nominal_size
+apply_adaptivity!
+SlopeAdaptivity
+BoundaryLayerAdaptivity
+ComposedAdaptivity
+```
+
 ## Rescaling and filtering
 
 ```@docs

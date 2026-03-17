@@ -73,8 +73,8 @@ include("ingest.jl")
 include("io.jl")
 include("simplify.jl")
 include("projection.jl")
-include("adaptivity.jl")
 include("terrain.jl")
+include("adaptivity.jl")
 include("tiles.jl")
 include("verbose.jl")
 include("gmsh.jl")
@@ -93,6 +93,9 @@ export read_geodata, list_components, read_shapefile
 export MinEdgeLength, AngleFilter, ComposedAlg
 
 export rescale, filter_components
+
+export AdaptivityAlgorithm, nominal_size, apply_adaptivity!
+export SlopeAdaptivity, BoundaryLayerAdaptivity, ComposedAdaptivity
 
 export DEMRaster, read_dem, sample_elevation, lift_to_3d
 
