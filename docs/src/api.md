@@ -45,6 +45,13 @@ write_geo
 generate_mesh
 ```
 
+## DEM tiles
+
+```@docs
+download_cop30_tiles
+prepare_dem
+```
+
 ## 3D terrain
 
 ```@docs

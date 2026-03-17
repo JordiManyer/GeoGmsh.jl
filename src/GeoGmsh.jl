@@ -13,14 +13,14 @@ using GeoGmsh
 # From Natural Earth (no files needed)
 using NaturalEarth
 geoms_to_geo(naturalearth("admin_0_countries", 110), "countries";
-  target_crs   = "EPSG:3857",
+  # target_crs defaults to :auto_utm — UTM zone detected from geometry centroid
   simplify_alg = MinEdgeLength(tol = 5_000.0),
   mesh_size    = 2.0,
 )
 
 # From any file (Shapefile, GeoJSON, GeoPackage, …)
 df = read_geodata("regions.shp")
-geoms_to_geo(df, "output"; target_crs = "EPSG:3857", mesh_size = 2.0)
+geoms_to_geo(df, "output"; mesh_size = 2.0)   # auto UTM by default
 
 # 3D terrain mesh
 geoms_to_msh_3d("region.shp", "srtm.tif", "terrain";
@@ -75,6 +75,7 @@ include("simplify.jl")
 include("projection.jl")
 include("adaptivity.jl")
 include("terrain.jl")
+include("tiles.jl")
 include("verbose.jl")
 include("gmsh.jl")
 include("pipeline.jl")
@@ -94,6 +95,8 @@ export MinEdgeLength, AngleFilter, ComposedAlg
 export rescale, filter_components
 
 export DEMRaster, read_dem, sample_elevation, lift_to_3d
+
+export download_cop30_tiles, prepare_dem
 
 export write_geo
 export generate_mesh

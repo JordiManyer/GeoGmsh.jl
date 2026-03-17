@@ -14,8 +14,9 @@ The pipeline runs these steps before writing:
 6. Rescale ([`rescale`](@ref)) — if `bbox_size` is set
 
 # Keyword arguments
-- `target_crs`       — destination CRS string (e.g. `"EPSG:3857"`) or `nothing`
-                       to skip reprojection.  Default: `"EPSG:3857"`.
+- `target_crs`       — destination CRS (e.g. `"EPSG:32632"`), `:auto_utm` to
+                       detect the UTM zone automatically from the geometry's
+                       centroid (default), or `nothing` to skip reprojection.
 - `select`           — when `geom` is a file path, a predicate `row -> Bool`
                        passed to [`read_geodata`](@ref).  Ignored otherwise.
 - `simplify_alg`     — any `GO.SimplifyAlg` (e.g. `MinEdgeLength(tol=5_000.0)`,
@@ -35,7 +36,7 @@ Returns `output_name`.
 function geoms_to_geo(
   geom,
   output_name :: AbstractString;
-  target_crs        :: Union{String,Nothing}         = "EPSG:3857",
+  target_crs        :: Union{String,Symbol,Nothing}   = :auto_utm,
   select                                             = nothing,
   simplify_alg      :: Union{GO.SimplifyAlg,Nothing} = nothing,
   max_distance      :: Union{Real,Nothing}           = nothing,
@@ -65,7 +66,7 @@ Additional keyword arguments (beyond those of `geoms_to_geo`):
 function geoms_to_msh(
   geom,
   output_name :: AbstractString;
-  target_crs        :: Union{String,Nothing}         = "EPSG:3857",
+  target_crs        :: Union{String,Symbol,Nothing}   = :auto_utm,
   select                                             = nothing,
   simplify_alg      :: Union{GO.SimplifyAlg,Nothing} = nothing,
   max_distance      :: Union{Real,Nothing}           = nothing,
@@ -123,7 +124,7 @@ function geoms_to_geo_3d(
   end
   geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
   geoms2d = _run_pipeline(geom_raw, source_crs;
-    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    target_crs   = get(kwargs, :target_crs,   :auto_utm),
     simplify_alg = get(kwargs, :simplify_alg, nothing),
     max_distance = get(kwargs, :max_distance, nothing),
     bbox_size    = nothing,   # must not rescale before DEM sampling
@@ -174,7 +175,7 @@ function geoms_to_msh_3d(
   end
   geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
   geoms2d = _run_pipeline(geom_raw, source_crs;
-    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    target_crs   = get(kwargs, :target_crs,   :auto_utm),
     simplify_alg = get(kwargs, :simplify_alg, nothing),
     max_distance = get(kwargs, :max_distance, nothing),
     bbox_size    = nothing,   # must not rescale before DEM sampling
@@ -236,7 +237,7 @@ function geoms_to_msh_3d_volume(
   end
   geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
   geoms2d = _run_pipeline(geom_raw, source_crs;
-    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    target_crs   = get(kwargs, :target_crs,   :auto_utm),
     simplify_alg = get(kwargs, :simplify_alg, nothing),
     max_distance = get(kwargs, :max_distance, nothing),
     bbox_size    = nothing,
@@ -335,6 +336,12 @@ function _run_pipeline(
   geom, source_crs;
   target_crs, simplify_alg, max_distance, bbox_size, verbose,
 )
+  # --- Resolve :auto_utm → concrete EPSG string ---
+  if target_crs === :auto_utm
+    target_crs = _auto_utm_crs(geom)
+    verbose && println("\nAuto UTM: ", target_crs)
+  end
+
   # --- Reproject (on raw GI geometry, before ingest) ---
   if !isnothing(target_crs)
     if isnothing(source_crs)

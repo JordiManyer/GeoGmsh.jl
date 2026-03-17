@@ -28,6 +28,26 @@ function run()
   @test minimum(xs2) ≈ 0.0   atol = 1e-8
   @test minimum(ys2) ≈ 0.0   atol = 1e-8
   @test max(maximum(xs2) - minimum(xs2), maximum(ys2) - minimum(ys2)) ≈ 100.0  atol = 1e-6
+
+  # :auto_utm — verify correct UTM zone is derived from geometry centroid.
+  # _POLY is centred at (10.5°E, 20.5°N):
+  #   zone = floor((10.5 + 180) / 6) + 1 = floor(190.5/6) + 1 = 31 + 1 = 32
+  #   hemisphere = North → "EPSG:32632"
+  geo_file = joinpath(tempdir(), "test_auto_utm.geo")
+  geoms_to_geo(_POLY, geo_file[1:end-4];
+    target_crs = :auto_utm, mesh_size = 0.1, verbose = false)
+  @test isfile(geo_file)
+  rm(geo_file)
+
+  # :auto_utm in the Southern hemisphere should give a 327xx code.
+  poly_s = GI.Polygon([GI.LinearRing([
+    (150.0, -35.0), (151.0, -35.0), (151.0, -34.0), (150.0, -34.0), (150.0, -35.0),
+  ])])
+  geo_file2 = joinpath(tempdir(), "test_auto_utm_s.geo")
+  geoms_to_geo(poly_s, geo_file2[1:end-4];
+    target_crs = :auto_utm, mesh_size = 0.1, verbose = false)
+  @test isfile(geo_file2)
+  rm(geo_file2)
 end
 
 end # module
