@@ -553,21 +553,29 @@ end
 
 """
     generate_mesh_volume(geoms, dem, name; depth=nothing, z_bottom=nothing,
-                         mesh_size=1.0, mesh_algorithm=nothing,
+                         z_top=nothing, mesh_size=1.0, mesh_algorithm=nothing,
                          split_components=false, verbose=false)
 
-Generate a volumetric tetrahedral mesh by extruding the terrain surface
-downward to a flat bottom plane.  Exactly one of `depth` or `z_bottom` must
-be provided.
+Generate a volumetric tetrahedral mesh by extruding the terrain surface to
+flat bounding planes.
 
-The algorithm:
-1. Generate a flat 2D triangle mesh from `geoms`.
-2. Sample `dem` at every mesh node to get `z_top`.
-3. Create a mirror node set at the flat bottom elevation.
-4. Split each triangular prism into 3 tetrahedra.
-5. Tag **Top**, **Bottom**, **Sides**, and **Volume** as Gmsh physical groups
-   so boundary conditions can be applied in FEM solvers.
-6. Write the result as a `.msh` file.
+The extrusion direction is controlled by `depth`:
+- `depth = d` (plain `Real`) — extrude **downward** by `d` below `min(z_terrain)`.
+- `depth = (d_below, d_above)` (2-tuple) — extrude **both** directions
+  simultaneously.  The terrain surface becomes an interior **Interface** physical
+  group shared by **Volume_Below** and **Volume_Above**.
+- `depth = (0.0, h)` — extrude **upward** only.
+
+`z_bottom` and `z_top` pin the flat planes to absolute elevations and override
+the corresponding component of `depth`.
+
+Physical groups written to the `.msh` file:
+
+| Scenario | Groups |
+|---|---|
+| Downward only | `Volume`, `Top` (terrain), `Bottom` (flat), `Sides` |
+| Upward only   | `Volume`, `Top` (flat), `Bottom` (terrain), `Sides` |
+| Both          | `Volume_Below`, `Volume_Above`, `Interface` (terrain), `Top`, `Bottom`, `Sides` |
 
 # Arguments
 - `geoms` — `Vector{Geometry3D}` (only the 2D base geometry is used).
@@ -575,10 +583,11 @@ The algorithm:
 - `name`  — output path **without** the `.msh` extension.
 
 # Keyword arguments
-- `depth`            — thickness below `min(z_terrain)` (same CRS units).
-- `z_bottom`         — absolute bottom elevation; overrides `depth`.
+- `depth`            — see above.
+- `z_bottom`         — absolute bottom elevation; overrides the below component.
+- `z_top`            — absolute top elevation; overrides the above component.
 - `mesh_size`        — characteristic element length (default `1.0`).
-- `mesh_algorithm`   — Gmsh 2D algorithm tag (default: Gmsh's built-in default).
+- `mesh_algorithm`   — Gmsh 2D algorithm tag.
 - `split_components` — write one `.msh` per geometry component (default `false`).
 - `verbose`          — print progress (default `false`).
 """
@@ -586,18 +595,34 @@ function generate_mesh_volume(
   geoms            :: Vector{Geometry3D},
   dem              :: DEMRaster,
   name             :: AbstractString;
-  depth            :: Union{Real,Nothing}              = nothing,
-  z_bottom         :: Union{Real,Nothing}              = nothing,
-  mesh_size        :: Union{Real,AdaptivityAlgorithm}  = 1.0,
-  mesh_algorithm   :: Union{Int,Nothing}               = nothing,
-  split_components :: Bool                             = false,
-  verbose          :: Bool                             = false,
+  depth            :: Union{Real,Tuple{Real,Real},Nothing} = nothing,
+  z_bottom         :: Union{Real,Nothing}                  = nothing,
+  z_top            :: Union{Real,Nothing}                  = nothing,
+  mesh_size        :: Union{Real,AdaptivityAlgorithm}      = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing}                   = nothing,
+  split_components :: Bool                                 = false,
+  verbose          :: Bool                                 = false,
 )
-  if isnothing(depth) && isnothing(z_bottom)
-    error("Either `depth` or `z_bottom` must be specified.")
+  # Parse depth → (d_below, d_above)
+  d_below, d_above = if isnothing(depth)
+    0.0, 0.0
+  elseif depth isa Real
+    Float64(depth), 0.0
+  else
+    Float64(depth[1]), Float64(depth[2])
   end
-  depth_f   = isnothing(depth)    ? nothing : Float64(depth)
-  z_bot_abs = isnothing(z_bottom) ? nothing : Float64(z_bottom)
+
+  has_below = d_below > 0.0 || !isnothing(z_bottom)
+  has_above = d_above > 0.0 || !isnothing(z_top)
+  has_below || has_above ||
+    error("Specify at least one of: `depth`, `z_bottom`, or `z_top`.")
+
+  z_bot_f = isnothing(z_bottom) ? nothing : Float64(z_bottom)
+  z_top_f = isnothing(z_top)    ? nothing : Float64(z_top)
+
+  _mesh_vol(gs, path) = _generate_mesh_volume_single(gs, dem, path;
+    mesh_size, mesh_algorithm,
+    d_below, d_above, z_bottom = z_bot_f, z_top = z_top_f)
 
   if split_components
     mkpath(name)
@@ -608,8 +633,7 @@ function generate_mesh_volume(
       bname = (isempty(g.base.name) ? lpad(i, nd, '0') : g.base.name) * ".msh"
       fpath = joinpath(name, bname)
       verbose && @printf("  [%*d / %d]  %-*s  ", nd, i, n, nd + 4, bname)
-      stats = _generate_mesh_volume_single([g], dem, fpath;
-        mesh_size, mesh_algorithm, depth = depth_f, z_bottom = z_bot_abs)
+      stats = _mesh_vol([g], fpath)
       total_nodes += stats.nodes
       total_tets  += stats.elements
       verbose && @printf("%s nodes  %s tets\n", _fmt(stats.nodes), _fmt(stats.elements))
@@ -619,8 +643,7 @@ function generate_mesh_volume(
       println("  Written    : ", name, "/")
     end
   else
-    stats = _generate_mesh_volume_single(geoms, dem, name * ".msh";
-      mesh_size, mesh_algorithm, depth = depth_f, z_bottom = z_bot_abs)
+    stats = _mesh_vol(geoms, name * ".msh")
     if verbose
       println("  Nodes      : $(_fmt(stats.nodes))   Tets : $(_fmt(stats.elements))")
       println("  Written    : ", name, ".msh")
@@ -629,18 +652,22 @@ function generate_mesh_volume(
   return name
 end
 
+# ── Shared step 1–3: 2D mesh, DEM sampling, boundary edges ─────────────────
+
 function _generate_mesh_volume_single(
-  geoms    :: Vector{Geometry3D},
-  dem      :: DEMRaster,
-  path     :: AbstractString;
+  geoms        :: Vector{Geometry3D},
+  dem          :: DEMRaster,
+  path         :: AbstractString;
   mesh_size,
   mesh_algorithm,
-  depth    :: Union{Float64,Nothing},
-  z_bottom :: Union{Float64,Nothing},
+  d_below      :: Float64,
+  d_above      :: Float64,
+  z_bottom     :: Union{Float64,Nothing},
+  z_top        :: Union{Float64,Nothing},
 ) :: NamedTuple
   lc = _point_lc(mesh_size)
 
-  # ── Step 1: generate flat 2D triangle mesh, capture nodes + connectivity ──
+  # ── Step 1: flat 2D triangle mesh ──────────────────────────────────────────
   node_tags_2d   = Vector{Int}()
   coords_2d      = Vector{Float64}()
   tri_nodes_flat = Vector{Int}()
@@ -649,155 +676,335 @@ function _generate_mesh_volume_single(
   try
     gmsh.option.setNumber("General.Verbosity", 2)
     gmsh.model.add("_2d_tmp")
-
     pt_id = line_id = loop_id = surf_id = 0
     for g in geoms
       pt_id, line_id, loop_id, surf_id =
         _add_geometry(g.base, pt_id, line_id, loop_id, surf_id, lc)
     end
     gmsh.model.geo.synchronize()
-
     curve_tags = Int[t for (_, t) in gmsh.model.getEntities(1)]
     _setup_mesh_size!(mesh_size, dem, curve_tags)
     !isnothing(mesh_algorithm) &&
       gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
-
     gmsh.model.mesh.generate(2)
-
     tags, coords, _ = gmsh.model.mesh.getNodes()
     append!(node_tags_2d, tags)
     append!(coords_2d,    coords)
-
     etypes, _, enodes = gmsh.model.mesh.getElements(2)
-    tri_idx = findfirst(==(2), etypes)   # element type 2 = linear triangle
+    tri_idx = findfirst(==(2), etypes)
     !isnothing(tri_idx) && append!(tri_nodes_flat, enodes[tri_idx])
   finally
     gmsh.finalize()
   end
 
-  n_nodes = length(node_tags_2d)
-  n_tris  = length(tri_nodes_flat) ÷ 3
+  n_nodes    = length(node_tags_2d)
+  n_tris     = length(tri_nodes_flat) ÷ 3
   tag_to_idx = Dict{Int,Int}(tag => i for (i, tag) in enumerate(node_tags_2d))
 
-  # ── Step 2: sample DEM; resolve bottom elevation ───────────────────────────
+  # ── Step 2: DEM sampling + elevation resolution ────────────────────────────
   pts_2d = NTuple{2,Float64}[(coords_2d[3i-2], coords_2d[3i-1]) for i in 1:n_nodes]
-  z_top  = sample_elevation(pts_2d, dem)
-  z_bot  = isnothing(z_bottom) ? minimum(z_top) - depth : z_bottom
+  z_surf = sample_elevation(pts_2d, dem)
 
-  # ── Step 3: find directed boundary edges for side-wall triangles ───────────
-  # A directed edge (a → b) is a boundary edge when its reverse (b → a)
-  # does not appear in any triangle (i.e. it is on the domain boundary).
+  has_below = d_below > 0.0 || !isnothing(z_bottom)
+  has_above = d_above > 0.0 || !isnothing(z_top)
+  z_bot_abs = has_below ? (isnothing(z_bottom) ? minimum(z_surf) - d_below : z_bottom) : nothing
+  z_top_abs = has_above ? (isnothing(z_top)    ? maximum(z_surf) + d_above : z_top)    : nothing
+
+  # ── Step 3: directed boundary edges (for side-wall triangles) ──────────────
   directed_edges = Set{NTuple{2,Int}}()
   for k in 1:n_tris
-    t0 = tag_to_idx[tri_nodes_flat[3k-2]]
-    t1 = tag_to_idx[tri_nodes_flat[3k-1]]
-    t2 = tag_to_idx[tri_nodes_flat[3k  ]]
-    push!(directed_edges, (t0, t1), (t1, t2), (t2, t0))
+    i0 = tag_to_idx[tri_nodes_flat[3k-2]]
+    i1 = tag_to_idx[tri_nodes_flat[3k-1]]
+    i2 = tag_to_idx[tri_nodes_flat[3k  ]]
+    push!(directed_edges, (i0, i1), (i1, i2), (i2, i0))
   end
-  boundary_edges = NTuple{2,Int}[
-    (a, b) for (a, b) in directed_edges if (b, a) ∉ directed_edges
-  ]
-  n_side_tris = 2 * length(boundary_edges)
+  boundary_edges = NTuple{2,Int}[(a, b) for (a, b) in directed_edges if (b, a) ∉ directed_edges]
 
-  # ── Step 4: build the volumetric mesh with physical groups ─────────────────
-  # Node layout: top = 1..n_nodes, bottom = n_nodes+1..2*n_nodes.
-  # Element tag layout (globally unique):
-  #   tets:        1          .. 3*n_tris
-  #   top tris:    3*n_tris+1 .. 4*n_tris
-  #   bot tris:    4*n_tris+1 .. 5*n_tris
-  #   side tris:   5*n_tris+1 .. 5*n_tris+n_side_tris
+  # ── Step 4: assemble ───────────────────────────────────────────────────────
+  if has_below && has_above
+    return _volume_bidirectional(path, coords_2d, z_surf, z_bot_abs, z_top_abs,
+                                 tag_to_idx, tri_nodes_flat, n_nodes, n_tris,
+                                 boundary_edges)
+  else
+    z_flat    = has_below ? z_bot_abs : z_top_abs
+    is_upward = !has_below
+    return _volume_unidirectional(path, coords_2d, z_surf, z_flat, is_upward,
+                                  tag_to_idx, tri_nodes_flat, n_nodes, n_tris,
+                                  boundary_edges)
+  end
+end
+
+# ── Unidirectional extrusion (down OR up) ────────────────────────────────────
+#
+# Node layout:  surf (terrain) = 1..n_nodes,  flat = n_nodes+1..2*n_nodes
+#
+# DOWN (is_upward=false): flat is below terrain
+#   • Tets:  b=flat, t=surf
+#   • Top    = terrain (original winding, normal ↑)
+#   • Bottom = flat    (reversed winding,  normal ↓)
+#   • Sides: T1=(surf_a, flat_a, flat_b)  T2=(surf_a, flat_b, surf_b)
+#
+# UP (is_upward=true): flat is above terrain
+#   • Tets:  b=surf, t=flat
+#   • Top    = flat    (original winding, normal ↑)
+#   • Bottom = terrain (reversed winding, normal ↓)
+#   • Sides: T1=(surf_a, surf_b, flat_b)  T2=(surf_a, flat_b, flat_a)
+
+function _volume_unidirectional(
+  path, coords_2d, z_surf, z_flat, is_upward,
+  tag_to_idx, tri_nodes_flat, n_nodes, n_tris, boundary_edges,
+) :: NamedTuple
+  n_tets       = 3 * n_tris
+  n_bnd        = length(boundary_edges)
+  n_side_tris  = 2 * n_bnd
 
   gmsh.initialize()
   try
     gmsh.option.setNumber("General.Verbosity", 2)
     gmsh.model.add("GeoGmsh3DVolume")
 
-    vol_tag  = gmsh.model.addDiscreteEntity(3)
-    top_tag  = gmsh.model.addDiscreteEntity(2)
-    bot_tag  = gmsh.model.addDiscreteEntity(2)
-    side_tag = gmsh.model.addDiscreteEntity(2)
+    vol_tag      = gmsh.model.addDiscreteEntity(3)
+    surf_ent     = gmsh.model.addDiscreteEntity(2)   # terrain surface entity
+    flat_ent     = gmsh.model.addDiscreteEntity(2)   # flat surface entity
+    side_ent     = gmsh.model.addDiscreteEntity(2)
 
-    # All nodes go to the volume entity.
+    # All nodes to the volume entity
     all_node_tags = collect(1:2*n_nodes)
-    all_coords    = Vector{Float64}(undef, 6 * n_nodes)
+    all_coords    = Vector{Float64}(undef, 6*n_nodes)
     for i in 1:n_nodes
-      x = coords_2d[3i-2];  y = coords_2d[3i-1]
-      j = n_nodes + i
-      all_coords[3i-2] = x;  all_coords[3i-1] = y;  all_coords[3i  ] = z_top[i]
-      all_coords[3j-2] = x;  all_coords[3j-1] = y;  all_coords[3j  ] = z_bot
+      x = coords_2d[3i-2];  y = coords_2d[3i-1];  fi = n_nodes + i
+      all_coords[3i-2]  = x;  all_coords[3i-1]  = y;  all_coords[3i  ] = z_surf[i]
+      all_coords[3fi-2] = x;  all_coords[3fi-1] = y;  all_coords[3fi ] = z_flat
     end
     gmsh.model.mesh.addNodes(3, vol_tag, all_node_tags, all_coords)
 
-    # ── Tetrahedra (prism split: 3 tets per triangle) ──────────────────────
-    # For top CCW triangle (t0,t1,t2) and bottom (b0,b1,b2):
-    #   Tet 1: (b0, b1, b2, t0)
-    #   Tet 2: (t0, b1, b2, t2)
-    #   Tet 3: (t0, t1, b1, t2)
-    n_tets    = 3 * n_tris
+    # Tetrahedra — prism split: 3 tets per triangle
+    #   DOWN: b = flat (n_nodes+i),  t = surf (i)
+    #   UP:   b = surf (i),          t = flat (n_nodes+i)
     tet_tags  = collect(1:n_tets)
-    tet_nodes = Vector{Int}(undef, 4 * n_tets)
-
+    tet_nodes = Vector{Int}(undef, 4*n_tets)
     for k in 1:n_tris
-      t0 = tag_to_idx[tri_nodes_flat[3k-2]]
-      t1 = tag_to_idx[tri_nodes_flat[3k-1]]
-      t2 = tag_to_idx[tri_nodes_flat[3k  ]]
-      b0 = n_nodes + t0;  b1 = n_nodes + t1;  b2 = n_nodes + t2
-      base = 12 * (k - 1)
-      tet_nodes[base+ 1] = b0;  tet_nodes[base+ 2] = b1
-      tet_nodes[base+ 3] = b2;  tet_nodes[base+ 4] = t0
-      tet_nodes[base+ 5] = t0;  tet_nodes[base+ 6] = b1
-      tet_nodes[base+ 7] = b2;  tet_nodes[base+ 8] = t2
-      tet_nodes[base+ 9] = t0;  tet_nodes[base+10] = t1
-      tet_nodes[base+11] = b1;  tet_nodes[base+12] = t2
+      si0 = tag_to_idx[tri_nodes_flat[3k-2]]
+      si1 = tag_to_idx[tri_nodes_flat[3k-1]]
+      si2 = tag_to_idx[tri_nodes_flat[3k  ]]
+      b0, b1, b2 = is_upward ? (si0, si1, si2) : (n_nodes+si0, n_nodes+si1, n_nodes+si2)
+      t0, t1, t2 = is_upward ? (n_nodes+si0, n_nodes+si1, n_nodes+si2) : (si0, si1, si2)
+      base = 12*(k-1)
+      tet_nodes[base+ 1]=b0;  tet_nodes[base+ 2]=b1
+      tet_nodes[base+ 3]=b2;  tet_nodes[base+ 4]=t0
+      tet_nodes[base+ 5]=t0;  tet_nodes[base+ 6]=b1
+      tet_nodes[base+ 7]=b2;  tet_nodes[base+ 8]=t2
+      tet_nodes[base+ 9]=t0;  tet_nodes[base+10]=t1
+      tet_nodes[base+11]=b1;  tet_nodes[base+12]=t2
     end
     gmsh.model.mesh.addElements(3, vol_tag, [4], [tet_tags], [tet_nodes])
 
-    # ── Top surface triangles (same winding as 2D mesh → normal points up) ──
-    top_tags  = collect(3*n_tris+1 : 4*n_tris)
-    top_nodes = Vector{Int}(undef, 3 * n_tris)
+    # Surface triangles
+    #   "Top" = higher-z surface  → original winding (normal ↑)
+    #   "Bottom" = lower-z surface → reversed winding (normal ↓)
+    surf_elem_tags = collect(n_tets+1 : n_tets+n_tris)
+    flat_elem_tags = collect(n_tets+n_tris+1 : n_tets+2*n_tris)
+    surf_nodes_v   = Vector{Int}(undef, 3*n_tris)   # original winding
+    flat_nodes_v   = Vector{Int}(undef, 3*n_tris)   # original winding before reversal
     for k in 1:n_tris
-      top_nodes[3k-2] = tag_to_idx[tri_nodes_flat[3k-2]]
-      top_nodes[3k-1] = tag_to_idx[tri_nodes_flat[3k-1]]
-      top_nodes[3k  ] = tag_to_idx[tri_nodes_flat[3k  ]]
+      si0 = tag_to_idx[tri_nodes_flat[3k-2]]
+      si1 = tag_to_idx[tri_nodes_flat[3k-1]]
+      si2 = tag_to_idx[tri_nodes_flat[3k  ]]
+      surf_nodes_v[3k-2]=si0;         surf_nodes_v[3k-1]=si1;         surf_nodes_v[3k  ]=si2
+      flat_nodes_v[3k-2]=n_nodes+si0; flat_nodes_v[3k-1]=n_nodes+si1; flat_nodes_v[3k  ]=n_nodes+si2
     end
-    gmsh.model.mesh.addElements(2, top_tag, [2], [top_tags], [top_nodes])
-
-    # ── Bottom surface triangles (reversed winding → normal points down) ────
-    bot_tags  = collect(4*n_tris+1 : 5*n_tris)
-    bot_nodes = Vector{Int}(undef, 3 * n_tris)
-    for k in 1:n_tris
-      t0 = tag_to_idx[tri_nodes_flat[3k-2]]
-      t1 = tag_to_idx[tri_nodes_flat[3k-1]]
-      t2 = tag_to_idx[tri_nodes_flat[3k  ]]
-      bot_nodes[3k-2] = n_nodes + t0
-      bot_nodes[3k-1] = n_nodes + t2   # reversed: t0,t2,t1
-      bot_nodes[3k  ] = n_nodes + t1
+    # DOWN: surf=Top (orig), flat=Bottom (reversed)
+    # UP:   flat=Top (orig), surf=Bottom (reversed)
+    if is_upward
+      # Reverse surf winding for "Bottom"
+      for k in 1:n_tris
+        surf_nodes_v[3k-1], surf_nodes_v[3k] = surf_nodes_v[3k], surf_nodes_v[3k-1]
+      end
+      top_ent, top_tags_v, top_nodes_arr = flat_ent, flat_elem_tags, flat_nodes_v
+      bot_ent, bot_tags_v, bot_nodes_arr = surf_ent, surf_elem_tags, surf_nodes_v
+      top_phys, bot_phys = "Top", "Bottom"
+    else
+      # Reverse flat winding for "Bottom"
+      for k in 1:n_tris
+        flat_nodes_v[3k-1], flat_nodes_v[3k] = flat_nodes_v[3k], flat_nodes_v[3k-1]
+      end
+      top_ent, top_tags_v, top_nodes_arr = surf_ent, surf_elem_tags, surf_nodes_v
+      bot_ent, bot_tags_v, bot_nodes_arr = flat_ent, flat_elem_tags, flat_nodes_v
+      top_phys, bot_phys = "Top", "Bottom"
     end
-    gmsh.model.mesh.addElements(2, bot_tag, [2], [bot_tags], [bot_nodes])
+    gmsh.model.mesh.addElements(2, top_ent, [2], [top_tags_v], [top_nodes_arr])
+    gmsh.model.mesh.addElements(2, bot_ent, [2], [bot_tags_v], [bot_nodes_arr])
 
-    # ── Side-wall triangles (two per boundary edge, outward normal) ─────────
-    # For directed boundary edge (a → b, interior to the left):
-    #   Tri 1: (top_a, bot_a, bot_b)
-    #   Tri 2: (top_a, bot_b, top_b)
-    side_tags_v  = collect(5*n_tris+1 : 5*n_tris+n_side_tris)
-    side_nodes_v = Vector{Int}(undef, 3 * n_side_tris)
+    # Side-wall triangles (2 per boundary edge, outward normal)
+    side_elem_tags = collect(n_tets+2*n_tris+1 : n_tets+2*n_tris+n_side_tris)
+    side_nodes_v   = Vector{Int}(undef, 3*n_side_tris)
     for (j, (a, b)) in enumerate(boundary_edges)
-      ba = n_nodes + a;  bb = n_nodes + b
-      base = 6 * (j - 1)
-      side_nodes_v[base+1] = a;   side_nodes_v[base+2] = ba;  side_nodes_v[base+3] = bb
-      side_nodes_v[base+4] = a;   side_nodes_v[base+5] = bb;  side_nodes_v[base+6] = b
+      fa = n_nodes+a;  fb = n_nodes+b
+      base = 6*(j-1)
+      if is_upward
+        # surf=lower, flat=upper  →  T1:(a,b,fb)  T2:(a,fb,fa)
+        side_nodes_v[base+1]=a;  side_nodes_v[base+2]=b;  side_nodes_v[base+3]=fb
+        side_nodes_v[base+4]=a;  side_nodes_v[base+5]=fb; side_nodes_v[base+6]=fa
+      else
+        # surf=upper, flat=lower  →  T1:(a,fa,fb)  T2:(a,fb,b)
+        side_nodes_v[base+1]=a;  side_nodes_v[base+2]=fa; side_nodes_v[base+3]=fb
+        side_nodes_v[base+4]=a;  side_nodes_v[base+5]=fb; side_nodes_v[base+6]=b
+      end
     end
-    gmsh.model.mesh.addElements(2, side_tag, [2], [side_tags_v], [side_nodes_v])
+    gmsh.model.mesh.addElements(2, side_ent, [2], [side_elem_tags], [side_nodes_v])
 
-    # ── Physical groups ──────────────────────────────────────────────────────
     gmsh.model.addPhysicalGroup(3, [vol_tag],  1, "Volume")
-    gmsh.model.addPhysicalGroup(2, [top_tag],  2, "Top")
-    gmsh.model.addPhysicalGroup(2, [bot_tag],  3, "Bottom")
-    gmsh.model.addPhysicalGroup(2, [side_tag], 4, "Sides")
+    gmsh.model.addPhysicalGroup(2, [top_ent],  2, top_phys)
+    gmsh.model.addPhysicalGroup(2, [bot_ent],  3, bot_phys)
+    gmsh.model.addPhysicalGroup(2, [side_ent], 4, "Sides")
 
     gmsh.write(path)
+    return (; nodes = 2*n_nodes, elements = n_tets)
+  finally
+    gmsh.finalize()
+  end
+end
 
-    return (; nodes = 2 * n_nodes, elements = n_tets)
+# ── Bidirectional extrusion (down AND up) ────────────────────────────────────
+#
+# Node layout:
+#   surf (terrain) = 1..n_nodes        z = z_surf[i]
+#   bot flat       = n_nodes+1..2n     z = z_bot  (constant)
+#   top flat       = 2*n_nodes+1..3n   z = z_top  (constant)
+#
+# Physical groups: Volume_Below, Volume_Above, Interface (terrain),
+#                  Top (flat top), Bottom (flat bot), Sides
+
+function _volume_bidirectional(
+  path, coords_2d, z_surf, z_bot, z_top,
+  tag_to_idx, tri_nodes_flat, n_nodes, n_tris, boundary_edges,
+) :: NamedTuple
+  n_tets_half  = 3 * n_tris       # tets in each half-volume
+  n_tets       = 2 * n_tets_half
+  n_bnd        = length(boundary_edges)
+  n_side_each  = 2 * n_bnd        # side triangles per half-volume
+
+  gmsh.initialize()
+  try
+    gmsh.option.setNumber("General.Verbosity", 2)
+    gmsh.model.add("GeoGmsh3DVolumeBI")
+
+    vol_below = gmsh.model.addDiscreteEntity(3)
+    vol_above = gmsh.model.addDiscreteEntity(3)
+    iface_ent = gmsh.model.addDiscreteEntity(2)   # Interface (terrain)
+    bot_ent   = gmsh.model.addDiscreteEntity(2)   # flat bottom
+    top_ent   = gmsh.model.addDiscreteEntity(2)   # flat top
+    side_ent  = gmsh.model.addDiscreteEntity(2)   # all side walls
+
+    # All nodes stored on vol_below; referenced by all entities
+    all_node_tags = collect(1:3*n_nodes)
+    all_coords    = Vector{Float64}(undef, 9*n_nodes)
+    for i in 1:n_nodes
+      x = coords_2d[3i-2];  y = coords_2d[3i-1]
+      bi = n_nodes   + i;    ti = 2*n_nodes + i
+      all_coords[3i-2]  = x;  all_coords[3i-1]  = y;  all_coords[3i  ] = z_surf[i]
+      all_coords[3bi-2] = x;  all_coords[3bi-1] = y;  all_coords[3bi ] = z_bot
+      all_coords[3ti-2] = x;  all_coords[3ti-1] = y;  all_coords[3ti ] = z_top
+    end
+    gmsh.model.mesh.addNodes(3, vol_below, all_node_tags, all_coords)
+
+    # Tets below: b=bot_flat, t=surf(terrain)
+    tet_below_tags  = collect(1:n_tets_half)
+    tet_below_nodes = Vector{Int}(undef, 4*n_tets_half)
+    for k in 1:n_tris
+      si0=tag_to_idx[tri_nodes_flat[3k-2]]
+      si1=tag_to_idx[tri_nodes_flat[3k-1]]
+      si2=tag_to_idx[tri_nodes_flat[3k  ]]
+      b0=n_nodes+si0; b1=n_nodes+si1; b2=n_nodes+si2
+      t0=si0;         t1=si1;         t2=si2
+      base=12*(k-1)
+      tet_below_nodes[base+ 1]=b0;  tet_below_nodes[base+ 2]=b1
+      tet_below_nodes[base+ 3]=b2;  tet_below_nodes[base+ 4]=t0
+      tet_below_nodes[base+ 5]=t0;  tet_below_nodes[base+ 6]=b1
+      tet_below_nodes[base+ 7]=b2;  tet_below_nodes[base+ 8]=t2
+      tet_below_nodes[base+ 9]=t0;  tet_below_nodes[base+10]=t1
+      tet_below_nodes[base+11]=b1;  tet_below_nodes[base+12]=t2
+    end
+    gmsh.model.mesh.addElements(3, vol_below, [4], [tet_below_tags], [tet_below_nodes])
+
+    # Tets above: b=surf(terrain), t=top_flat
+    tet_above_tags  = collect(n_tets_half+1:n_tets)
+    tet_above_nodes = Vector{Int}(undef, 4*n_tets_half)
+    for k in 1:n_tris
+      si0=tag_to_idx[tri_nodes_flat[3k-2]]
+      si1=tag_to_idx[tri_nodes_flat[3k-1]]
+      si2=tag_to_idx[tri_nodes_flat[3k  ]]
+      b0=si0;              b1=si1;              b2=si2
+      t0=2*n_nodes+si0;    t1=2*n_nodes+si1;    t2=2*n_nodes+si2
+      base=12*(k-1)
+      tet_above_nodes[base+ 1]=b0;  tet_above_nodes[base+ 2]=b1
+      tet_above_nodes[base+ 3]=b2;  tet_above_nodes[base+ 4]=t0
+      tet_above_nodes[base+ 5]=t0;  tet_above_nodes[base+ 6]=b1
+      tet_above_nodes[base+ 7]=b2;  tet_above_nodes[base+ 8]=t2
+      tet_above_nodes[base+ 9]=t0;  tet_above_nodes[base+10]=t1
+      tet_above_nodes[base+11]=b1;  tet_above_nodes[base+12]=t2
+    end
+    gmsh.model.mesh.addElements(3, vol_above, [4], [tet_above_tags], [tet_above_nodes])
+
+    # Interface: terrain surface, original winding (normal ↑, faces Volume_Below outward)
+    iface_tags = collect(n_tets+1:n_tets+n_tris)
+    iface_nodes = Vector{Int}(undef, 3*n_tris)
+    for k in 1:n_tris
+      iface_nodes[3k-2]=tag_to_idx[tri_nodes_flat[3k-2]]
+      iface_nodes[3k-1]=tag_to_idx[tri_nodes_flat[3k-1]]
+      iface_nodes[3k  ]=tag_to_idx[tri_nodes_flat[3k  ]]
+    end
+    gmsh.model.mesh.addElements(2, iface_ent, [2], [iface_tags], [iface_nodes])
+
+    # Bottom: flat bottom, reversed winding (normal ↓)
+    bot_elem_tags = collect(n_tets+n_tris+1:n_tets+2*n_tris)
+    bot_nodes_v   = Vector{Int}(undef, 3*n_tris)
+    for k in 1:n_tris
+      si0=tag_to_idx[tri_nodes_flat[3k-2]]
+      si1=tag_to_idx[tri_nodes_flat[3k-1]]
+      si2=tag_to_idx[tri_nodes_flat[3k  ]]
+      bot_nodes_v[3k-2]=n_nodes+si0; bot_nodes_v[3k-1]=n_nodes+si2; bot_nodes_v[3k]=n_nodes+si1
+    end
+    gmsh.model.mesh.addElements(2, bot_ent, [2], [bot_elem_tags], [bot_nodes_v])
+
+    # Top: flat top, original winding (normal ↑)
+    top_elem_tags = collect(n_tets+2*n_tris+1:n_tets+3*n_tris)
+    top_nodes_v   = Vector{Int}(undef, 3*n_tris)
+    for k in 1:n_tris
+      si0=tag_to_idx[tri_nodes_flat[3k-2]]
+      si1=tag_to_idx[tri_nodes_flat[3k-1]]
+      si2=tag_to_idx[tri_nodes_flat[3k  ]]
+      top_nodes_v[3k-2]=2*n_nodes+si0; top_nodes_v[3k-1]=2*n_nodes+si1; top_nodes_v[3k]=2*n_nodes+si2
+    end
+    gmsh.model.mesh.addElements(2, top_ent, [2], [top_elem_tags], [top_nodes_v])
+
+    # Sides: lower half (surf→bot) + upper half (surf→top)
+    n_side_total  = 2 * n_side_each
+    side_elem_tags = collect(n_tets+3*n_tris+1 : n_tets+3*n_tris+n_side_total)
+    side_nodes_v   = Vector{Int}(undef, 3*n_side_total)
+    for (j, (a, b)) in enumerate(boundary_edges)
+      ba=n_nodes+a;      bb=n_nodes+b
+      ta=2*n_nodes+a;    tb=2*n_nodes+b
+      # Lower (surf→bot): T1=(a,ba,bb)  T2=(a,bb,b)
+      lo = 6*(j-1)
+      side_nodes_v[lo+1]=a;  side_nodes_v[lo+2]=ba; side_nodes_v[lo+3]=bb
+      side_nodes_v[lo+4]=a;  side_nodes_v[lo+5]=bb; side_nodes_v[lo+6]=b
+      # Upper (surf→top): T1=(a,b,tb)  T2=(a,tb,ta)
+      hi = 3*n_side_each + 6*(j-1)
+      side_nodes_v[hi+1]=a;  side_nodes_v[hi+2]=b;  side_nodes_v[hi+3]=tb
+      side_nodes_v[hi+4]=a;  side_nodes_v[hi+5]=tb; side_nodes_v[hi+6]=ta
+    end
+    gmsh.model.mesh.addElements(2, side_ent, [2], [side_elem_tags], [side_nodes_v])
+
+    gmsh.model.addPhysicalGroup(3, [vol_below], 1, "Volume_Below")
+    gmsh.model.addPhysicalGroup(3, [vol_above], 2, "Volume_Above")
+    gmsh.model.addPhysicalGroup(2, [iface_ent], 3, "Interface")
+    gmsh.model.addPhysicalGroup(2, [bot_ent],   4, "Bottom")
+    gmsh.model.addPhysicalGroup(2, [top_ent],   5, "Top")
+    gmsh.model.addPhysicalGroup(2, [side_ent],  6, "Sides")
+
+    gmsh.write(path)
+    return (; nodes = 3*n_nodes, elements = n_tets)
   finally
     gmsh.finalize()
   end

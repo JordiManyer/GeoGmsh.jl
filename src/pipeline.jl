@@ -203,34 +203,36 @@ end
 Generate a **volumetric** (tetrahedral) terrain mesh.
 
 Runs the same pipeline as [`geoms_to_msh_3d`](@ref) to produce a terrain
-surface mesh, then extrudes it downward to a flat bottom plane, splitting
-each triangular prism into 3 tetrahedra.  **Top**, **Bottom**, **Sides**, and
-**Volume** physical groups are written to the `.msh` file for boundary
-condition assignment in FEM solvers.
+surface mesh, then extrudes it to flat bounding planes, splitting each
+triangular prism into 3 tetrahedra.
+
+The extrusion direction is controlled by `depth`:
+- `depth = d` — extrude **downward** by `d` below `min(z_terrain)`.
+- `depth = (d_below, d_above)` — extrude **both** directions; the terrain
+  surface becomes an **Interface** physical group.
+- `depth = (0.0, h)` — extrude **upward** only.
+
+`z_bottom` / `z_top` pin the flat planes to absolute elevations.
 
 The DEM must be in the same CRS as the (reprojected) vector data.  `bbox_size`
 is silently ignored for the same reason as in [`geoms_to_msh_3d`](@ref).
 
-# Keyword arguments
-All keyword arguments of [`geoms_to_msh_3d`](@ref) are supported, plus:
-- `depth`    — vertical thickness below `min(z_terrain)` (same CRS units).
-               Required unless `z_bottom` is given.
-- `z_bottom` — absolute bottom elevation; overrides `depth` when provided.
-- `split_components` — write one `.msh` per geometry component (default `false`).
+See [`generate_mesh_volume`](@ref) for the full physical group reference.
 """
 function geoms_to_msh_3d_volume(
   geom,
   dem_path         :: AbstractString,
   output_name      :: AbstractString;
-  depth            :: Union{Real,Nothing} = nothing,
-  z_bottom         :: Union{Real,Nothing} = nothing,
-  nodata_fill      :: Real                = 0.0,
-  split_components :: Bool                = false,
-  verbose          :: Bool                = true,
+  depth            :: Union{Real,Tuple{Real,Real},Nothing} = nothing,
+  z_bottom         :: Union{Real,Nothing}                  = nothing,
+  z_top            :: Union{Real,Nothing}                  = nothing,
+  nodata_fill      :: Real                                 = 0.0,
+  split_components :: Bool                                 = false,
+  verbose          :: Bool                                 = true,
   kwargs...,
 )
-  if isnothing(depth) && isnothing(z_bottom)
-    error("Either `depth` or `z_bottom` must be specified.")
+  if isnothing(depth) && isnothing(z_bottom) && isnothing(z_top)
+    error("Specify at least one of: `depth`, `z_bottom`, or `z_top`.")
   end
   if !isnothing(get(kwargs, :bbox_size, nothing))
     @warn "`bbox_size` is not supported in `geoms_to_msh_3d_volume` and will be ignored."
@@ -249,7 +251,7 @@ function geoms_to_msh_3d_volume(
   verbose && println("\nMeshing (3D volume): ", length(geoms3d), " component(s) → ",
                      output_name, split_components ? "/" : ".msh")
   generate_mesh_volume(geoms3d, dem, output_name;
-    depth, z_bottom, split_components,
+    depth, z_bottom, z_top, split_components,
     mesh_size      = get(kwargs, :mesh_size,      1.0),
     mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
     verbose,

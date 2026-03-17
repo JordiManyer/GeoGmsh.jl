@@ -4,7 +4,9 @@ using GeoGmsh
 using Test
 
 # A small synthetic square (10 km side) so meshing is fast.
-const _SIDE  = 10_000.0
+const _SIDE   = 10_000.0
+# Coarsest mesh that still exercises the code: ~2 triangles for the whole square.
+const _MESH3D = _SIDE
 const _SQUARE = Geometry2D(
   Contour([(0.0,0.0),(0.0,_SIDE),(_SIDE,_SIDE),(_SIDE,0.0)], true),
   Contour[],
@@ -52,7 +54,7 @@ function run()
   rm(TMP_NAME; recursive = true)
 
   # Volume mesh: depth kwarg.
-  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = 2_000.0, depth = 500.0)
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, depth = 500.0)
   @test isfile(TMP_NAME * ".msh")
   content = read(TMP_NAME * ".msh", String)
   @test occursin("\$Elements",      content)
@@ -65,16 +67,45 @@ function run()
   rm(TMP_NAME * ".msh")
 
   # Volume mesh: z_bottom kwarg (absolute elevation).
-  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = 2_000.0, z_bottom = -200.0)
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, z_bottom = -200.0)
   @test isfile(TMP_NAME * ".msh")
   rm(TMP_NAME * ".msh")
 
   # Volume mesh: split_components.
-  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = 2_000.0, depth = 500.0,
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, depth = 500.0,
                         split_components = true)
   @test isdir(TMP_NAME)
   @test length(readdir(TMP_NAME)) == length(_SQUARE3D)
   rm(TMP_NAME; recursive = true)
+
+  # ── Bidirectional extrusion ────────────────────────────────────────────────
+
+  # Upward-only: depth = (0, h)
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, depth = (0.0, 500.0))
+  @test isfile(TMP_NAME * ".msh")
+  content = read(TMP_NAME * ".msh", String)
+  @test occursin("\"Top\"",    content)
+  @test occursin("\"Bottom\"", content)
+  @test !occursin("\"Interface\"", content)
+  rm(TMP_NAME * ".msh")
+
+  # Bidirectional: depth = (down, up)
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, depth = (300.0, 500.0))
+  @test isfile(TMP_NAME * ".msh")
+  content = read(TMP_NAME * ".msh", String)
+  @test occursin("\"Volume_Below\"", content)
+  @test occursin("\"Volume_Above\"", content)
+  @test occursin("\"Interface\"",    content)
+  @test occursin("\"Top\"",          content)
+  @test occursin("\"Bottom\"",       content)
+  rm(TMP_NAME * ".msh")
+
+  # Bidirectional with z_top absolute bound
+  generate_mesh_volume(_SQUARE3D, _DEM, TMP_NAME; mesh_size = _MESH3D, depth = 300.0, z_top = 200.0)
+  @test isfile(TMP_NAME * ".msh")
+  content = read(TMP_NAME * ".msh", String)
+  @test occursin("\"Interface\"", content)
+  rm(TMP_NAME * ".msh")
 
   # ── Adaptivity types ───────────────────────────────────────────────────────
 
@@ -98,15 +129,15 @@ function run()
 
   # SlopeAdaptivity in a 3D terrain mesh (uses DEM gradient).
   generate_mesh(_SQUARE3D, _DEM, TMP_NAME;
-    mesh_size = SlopeAdaptivity(mesh_size_min = 500.0, mesh_size_max = 2_000.0))
+    mesh_size = SlopeAdaptivity(mesh_size_min = _MESH3D/2, mesh_size_max = _MESH3D))
   @test isfile(TMP_NAME * ".msh")
   rm(TMP_NAME * ".msh")
 
   # ComposedAdaptivity in a 3D terrain mesh.
   generate_mesh(_SQUARE3D, _DEM, TMP_NAME;
     mesh_size = ComposedAdaptivity(
-      SlopeAdaptivity(mesh_size_min = 500.0, mesh_size_max = 2_000.0),
-      BoundaryLayerAdaptivity(mesh_size = 2_000.0, mesh_size_min = 300.0, width = 1_500.0),
+      SlopeAdaptivity(mesh_size_min = _MESH3D/2, mesh_size_max = _MESH3D),
+      BoundaryLayerAdaptivity(mesh_size = _MESH3D, mesh_size_min = _MESH3D/4, width = _MESH3D/2),
     ))
   @test isfile(TMP_NAME * ".msh")
   rm(TMP_NAME * ".msh")
