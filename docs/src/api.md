@@ -60,6 +60,7 @@ generate_mesh
 
 ```@docs
 download_cop30_tiles
+download_opentopo_dem
 prepare_dem
 ```
 

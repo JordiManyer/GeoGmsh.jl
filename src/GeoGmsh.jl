@@ -99,7 +99,7 @@ export SlopeAdaptivity, BoundaryLayerAdaptivity, ComposedAdaptivity
 
 export DEMRaster, read_dem, sample_elevation, lift_to_3d
 
-export download_cop30_tiles, prepare_dem
+export download_cop30_tiles, download_opentopo_dem, prepare_dem
 
 export write_geo
 export generate_mesh

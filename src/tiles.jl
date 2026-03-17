@@ -2,9 +2,11 @@
 DEM tile download and preparation utilities.
 
 Provides:
-- `download_cop30_tiles` — fetch Copernicus GLO-30 tiles for a bounding box.
-- `prepare_dem`          — mosaic + reproject tile rasters (generic), with a
-                           convenience overload that also downloads first.
+- `download_cop30_tiles`  — fetch Copernicus GLO-30 tiles for a bounding box.
+- `download_opentopo_dem` — fetch a DEM from the OpenTopography global API
+                            (GEBCO, SRTM, COP30, ALOS, …).
+- `prepare_dem`           — mosaic + reproject tile rasters (generic), with a
+                            convenience overload that also downloads first.
 """
 
 import GDAL_jll
@@ -148,4 +150,104 @@ function prepare_dem(
     error("Unknown source :$source. Currently supported: :cop30")
   end
   prepare_dem(tile_paths, target_crs, output_path; resolution, verbose)
+end
+
+# ============================================================================
+# OpenTopography global DEM API
+# ============================================================================
+
+# Supported demtype symbols → OpenTopography API strings.
+const _OPENTOPO_DEMTYPES = Dict{Symbol,String}(
+  :gebco  => "GEBCOIceTopo",  # GEBCO 500 m topo-bathy (ocean + land, ice surface)
+  :cop30  => "COP30",         # Copernicus Global DEM 30 m
+  :cop90  => "COP90",         # Copernicus Global DEM 90 m
+  :srtm   => "SRTMGL3",       # SRTM 90 m
+  :srtm1  => "SRTMGL1",       # SRTM 30 m
+  :alos   => "AW3D30",        # ALOS World 3D 30 m
+)
+
+const _OPENTOPO_BASE = "https://portal.opentopography.org/API/globaldem"
+
+"""
+    download_opentopo_dem(bbox, output_path;
+                          demtype  = :gebco,
+                          api_key  = ENV["OPENTOPO_API_KEY"],
+                          verbose  = true) -> String
+
+Download a DEM from the **OpenTopography** global DEM API and save it as a
+GeoTIFF to `output_path`.  If the file already exists it is returned immediately
+(cached — safe to call on every run).
+
+# Getting an API key
+
+Register for free at https://opentopography.org/developers and generate a key
+in your account dashboard.  Store it in your environment:
+
+```bash
+export OPENTOPO_API_KEY="your_key_here"   # add to ~/.bashrc or ~/.zshrc
+```
+
+# Keyword arguments
+- `demtype` — DEM source (default `:gebco`).  Supported symbols:
+
+  | Symbol   | Dataset                          | Resolution |
+  |----------|----------------------------------|------------|
+  | `:gebco` | GEBCO topo-bathy (ocean + land)  | ~500 m     |
+  | `:cop30` | Copernicus Global DEM            | 30 m       |
+  | `:cop90` | Copernicus Global DEM            | 90 m       |
+  | `:srtm`  | SRTM (land only)                 | 90 m       |
+  | `:srtm1` | SRTM (land only)                 | 30 m       |
+  | `:alos`  | ALOS World 3D (land only)        | 30 m       |
+
+- `api_key` — OpenTopography API key.  Defaults to `ENV["OPENTOPO_API_KEY"]`.
+- `verbose`  — print progress (default `true`).
+
+# Example
+```julia
+bbox    = (4.0, 60.0, 6.0, 62.0)   # Sognefjord, Norway
+raw_tif = download_opentopo_dem(bbox, "sognefjord_gebco.tif")
+dem_tif = prepare_dem([raw_tif], "EPSG:32632", "sognefjord_32632.tif")
+```
+"""
+function download_opentopo_dem(
+  bbox        :: NTuple{4},
+  output_path :: AbstractString;
+  demtype     :: Symbol         = :gebco,
+  api_key     :: AbstractString = get(ENV, "OPENTOPO_API_KEY", ""),
+  verbose     :: Bool           = true,
+) :: String
+  if isfile(output_path)
+    verbose && println("DEM cached: $output_path")
+    return output_path
+  end
+
+  isempty(api_key) &&
+    error("OpenTopography API key required. " *
+          "Register at https://opentopography.org/developers and set " *
+          "ENV[\"OPENTOPO_API_KEY\"], or pass `api_key` explicitly.")
+
+  dt = get(_OPENTOPO_DEMTYPES, demtype, nothing)
+  isnothing(dt) &&
+    error("Unknown demtype :$demtype. Supported: $(sort(collect(keys(_OPENTOPO_DEMTYPES))))")
+
+  lon_min, lat_min, lon_max, lat_max = Float64.(bbox)
+  url = string(_OPENTOPO_BASE,
+    "?demtype=", dt,
+    "&south=",   lat_min, "&north=", lat_max,
+    "&west=",    lon_min, "&east=",  lon_max,
+    "&outputFormat=GTiff",
+    "&API_Key=", api_key)
+
+  dest_dir = dirname(output_path)
+  isempty(dest_dir) || mkpath(dest_dir)
+
+  verbose && println("Downloading $dt from OpenTopography…")
+  try
+    Downloads.download(url, output_path)
+    verbose && println("  Saved: $output_path")
+  catch e
+    isfile(output_path) && rm(output_path)
+    error("Download failed: $e")
+  end
+  return output_path
 end
