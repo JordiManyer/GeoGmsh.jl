@@ -52,6 +52,7 @@ geoms_to_msh_3d("region.shp", "srtm.tif", "terrain";
 module GeoGmsh
 
 import ArchGDAL
+using DataFrames
 using GeoDataFrames
 import GeoInterface as GI
 import GeometryOps as GO

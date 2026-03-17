@@ -45,5 +45,10 @@ function GO._simplify(alg::MinEdgeLength, points::Vector, _preserve_endpoint::Bo
       prev = i
     end
   end
-  return points[kept]
+  result = points[kept]
+  # GeoInterface requires a LinearRing to have ≥ 3 points.  If the tolerance
+  # is so large that the ring collapses, return the original so that ingest +
+  # filter_components can discard it cleanly rather than throwing here.
+  length(result) < 3 && return points
+  return result
 end
