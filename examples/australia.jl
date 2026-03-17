@@ -54,7 +54,7 @@ geoms_to_geo(
   input, output;
   select           = row -> row.AUS_CODE21 == "AUS" && row.ring == 1,
   target_crs       = "EPSG:3857",
-  simplify_tol     = 100_000.0,
+  simplify_alg     = MinEdgeLength(tol = 100_000.0),
   bbox_size        = 100.0,
   split_components = true,
   verbose          = true,
@@ -64,7 +64,7 @@ geoms_to_msh(
   input, output;
   select           = row -> row.AUS_CODE21 == "AUS" && row.ring == 1,
   target_crs       = "EPSG:3857",
-  simplify_tol     = 100_000.0,
+  simplify_alg     = MinEdgeLength(tol = 100_000.0),
   bbox_size        = 100.0,
   mesh_size        = 2.0,
   split_components = true,

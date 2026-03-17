@@ -23,7 +23,7 @@ geoms_to_geo(
   countries, joinpath(data_dir, "france");
   select       = row -> get(row, :NAME, "") == "France",
   target_crs   = "EPSG:3857",
-  simplify_tol = 5_000.0,
+  simplify_alg = MinEdgeLength(tol = 5_000.0),
   bbox_size    = 100.0,
   verbose      = true,
 )
@@ -32,7 +32,7 @@ geoms_to_msh(
   countries, joinpath(data_dir, "france");
   select       = row -> get(row, :NAME, "") == "France",
   target_crs   = "EPSG:3857",
-  simplify_tol = 5_000.0,
+  simplify_alg = MinEdgeLength(tol = 5_000.0),
   bbox_size    = 100.0,
   mesh_size    = 2.0,
   verbose      = true,
@@ -48,7 +48,7 @@ geoms_to_geo(
   countries, joinpath(data_dir, "china");
   select       = row -> get(row, :NAME, "") == "China",
   target_crs   = "EPSG:3857",
-  simplify_tol = 20_000.0,
+  simplify_alg = MinEdgeLength(tol = 20_000.0),
   bbox_size    = 100.0,
   verbose      = true,
 )
@@ -57,7 +57,7 @@ geoms_to_msh(
   countries, joinpath(data_dir, "china");
   select       = row -> get(row, :NAME, "") == "China",
   target_crs   = "EPSG:3857",
-  simplify_tol = 20_000.0,
+  simplify_alg = MinEdgeLength(tol = 20_000.0),
   bbox_size    = 100.0,
   mesh_size    = 2.0,
   verbose      = true,

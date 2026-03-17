@@ -12,7 +12,7 @@ function run()
   df = read_geodata(FIXTURE_SHP)
   geoms_to_geo(df, TMP_NAME;
     target_crs   = "EPSG:3857",
-    simplify_tol = 50_000.0,
+    simplify_alg = MinEdgeLength(tol = 50_000.0),
     bbox_size    = 100.0,
     mesh_size    = 5.0,
   )

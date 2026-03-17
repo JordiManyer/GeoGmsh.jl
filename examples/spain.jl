@@ -61,11 +61,15 @@ println(comps)
 
 println("\n=== Spain (mainland) ===")
 
+import GeometryOps as GO
+
+spain_alg = MinEdgeLength(tol = 10_000.0) ∘ AngleFilter(tol = 20.0)
+
 geoms_to_geo(
   nuts0_path, joinpath(data_dir, "spain");
   select       = row -> row.NUTS_ID == "ES" && row.ring == 1,
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = spain_alg,
   bbox_size    = 100.0,
   verbose      = true,
 )
@@ -74,7 +78,7 @@ geoms_to_msh(
   nuts0_path, joinpath(data_dir, "spain");
   select       = row -> row.NUTS_ID == "ES" && row.ring == 1,
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = spain_alg,
   bbox_size    = 100.0,
   mesh_size    = 2.0,
   verbose      = true,
@@ -96,7 +100,7 @@ geoms_to_geo(
   nuts2_path, joinpath(data_dir, "catalonia");
   select       = row -> row.NUTS_ID == "ES51" && row.ring == 1,
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
   bbox_size    = 100.0,
   verbose      = true,
 )
@@ -105,7 +109,7 @@ geoms_to_msh(
   nuts2_path, joinpath(data_dir, "catalonia");
   select       = row -> row.NUTS_ID == "ES51" && row.ring == 1,
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
   bbox_size    = 100.0,
   mesh_size    = 2.0,
   verbose      = true,

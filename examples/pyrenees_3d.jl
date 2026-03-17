@@ -129,7 +129,7 @@ geoms_to_msh_3d(
   nuts_path, dem_tif_utm, output;
   select         = row -> row.NUTS_ID == "ES22",
   target_crs     = "EPSG:25830",
-  simplify_tol   = 5_000.0,    # ≥ 5 km minimum edge
+  simplify_alg   = MinEdgeLength(tol = 5_000.0),
   mesh_size      = 5_000.0,    # 5 km characteristic element length
   nodata_fill    = 0.0,
   verbose        = true,

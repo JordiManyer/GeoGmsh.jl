@@ -72,7 +72,7 @@ output = joinpath(data_dir, "iberia")
 geoms_to_geo(
   iberia_geom, output;
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
   bbox_size    = 100.0,
   verbose      = true,
 )
@@ -80,7 +80,7 @@ geoms_to_geo(
 geoms_to_msh(
   iberia_geom, output;
   target_crs   = "EPSG:3857",
-  simplify_tol = 10_000.0,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
   bbox_size    = 100.0,
   mesh_size    = 2.0,
   verbose      = true,

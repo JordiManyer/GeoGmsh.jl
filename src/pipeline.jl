@@ -7,8 +7,8 @@ the `.geo` extension.
 
 The pipeline runs these steps before writing:
 1. Reproject (`GeometryOps.reproject`) — if `target_crs` is set
-2. Simplify (`GeometryOps.simplify` with [`MinEdgeLength`](@ref)) — if `simplify_tol` is set
-3. Segmentize (`GeometryOps.segmentize`) — if `max_edge_length` is set
+2. Simplify (`GeometryOps.simplify`) — if `simplify_alg` is set
+3. Segmentize (`GeometryOps.segmentize`) — if `max_distance` is set
 4. Ingest ([`ingest`](@ref)) — convert to Gmsh-ready internal representation
 5. Filter ([`filter_components`](@ref)) — drop degenerate rings
 6. Rescale ([`rescale`](@ref)) — if `bbox_size` is set
@@ -18,9 +18,11 @@ The pipeline runs these steps before writing:
                        to skip reprojection.  Default: `"EPSG:3857"`.
 - `select`           — when `geom` is a file path, a predicate `row -> Bool`
                        passed to [`read_geodata`](@ref).  Ignored otherwise.
-- `simplify_tol`     — minimum edge length after simplification (in the
-                       coordinate units after reprojection).  `nothing` skips.
-- `max_edge_length`  — maximum edge length for segmentization.  `nothing` skips.
+- `simplify_alg`     — any `GO.SimplifyAlg` (e.g. `MinEdgeLength(tol=5_000.0)`,
+                       `AngleFilter(tol=20.0)`, or a composition via `∘`).
+                       `nothing` skips simplification.
+- `max_distance`     — maximum edge length for segmentization (same units as
+                       the reprojected CRS).  `nothing` skips.
 - `bbox_size`        — rescale so the largest bounding-box dimension equals
                        this value, origin at (0, 0).  `nothing` to skip.
 - `mesh_size`        — characteristic element length (default: `1.0`).
@@ -33,19 +35,19 @@ Returns `output_name`.
 function geoms_to_geo(
   geom,
   output_name :: AbstractString;
-  target_crs        :: Union{String,Nothing} = "EPSG:3857",
-  select                                     = nothing,
-  simplify_tol      :: Union{Real,Nothing}   = nothing,
-  max_edge_length   :: Union{Real,Nothing}   = nothing,
-  bbox_size         :: Union{Real,Nothing}   = nothing,
-  mesh_size         :: Real                  = 1.0,
-  mesh_algorithm    :: Union{Int,Nothing}    = nothing,
-  split_components  :: Bool                  = false,
-  verbose           :: Bool                  = true,
+  target_crs        :: Union{String,Nothing}         = "EPSG:3857",
+  select                                             = nothing,
+  simplify_alg      :: Union{GO.SimplifyAlg,Nothing} = nothing,
+  max_distance      :: Union{Real,Nothing}           = nothing,
+  bbox_size         :: Union{Real,Nothing}           = nothing,
+  mesh_size         :: Real                          = 1.0,
+  mesh_algorithm    :: Union{Int,Nothing}            = nothing,
+  split_components  :: Bool                          = false,
+  verbose           :: Bool                          = true,
 )
   geom, source_crs = _load(geom; select, verbose)
   geoms = _run_pipeline(geom, source_crs;
-    target_crs, simplify_tol, max_edge_length, bbox_size, verbose)
+    target_crs, simplify_alg, max_distance, bbox_size, verbose)
   verbose && println("\nWriting: ", output_name, split_components ? "/" : ".geo")
   write_geo(geoms, output_name; mesh_size, mesh_algorithm, split_components, verbose)
   return output_name
@@ -63,21 +65,21 @@ Additional keyword arguments (beyond those of `geoms_to_geo`):
 function geoms_to_msh(
   geom,
   output_name :: AbstractString;
-  target_crs        :: Union{String,Nothing} = "EPSG:3857",
-  select                                     = nothing,
-  simplify_tol      :: Union{Real,Nothing}   = nothing,
-  max_edge_length   :: Union{Real,Nothing}   = nothing,
-  bbox_size         :: Union{Real,Nothing}   = nothing,
-  mesh_size         :: Real                  = 1.0,
-  mesh_algorithm    :: Union{Int,Nothing}    = nothing,
-  order             :: Int                   = 1,
-  recombine         :: Bool                  = false,
-  split_components  :: Bool                  = false,
-  verbose           :: Bool                  = true,
+  target_crs        :: Union{String,Nothing}         = "EPSG:3857",
+  select                                             = nothing,
+  simplify_alg      :: Union{GO.SimplifyAlg,Nothing} = nothing,
+  max_distance      :: Union{Real,Nothing}           = nothing,
+  bbox_size         :: Union{Real,Nothing}           = nothing,
+  mesh_size         :: Real                          = 1.0,
+  mesh_algorithm    :: Union{Int,Nothing}            = nothing,
+  order             :: Int                           = 1,
+  recombine         :: Bool                          = false,
+  split_components  :: Bool                          = false,
+  verbose           :: Bool                          = true,
 )
   geom, source_crs = _load(geom; select, verbose)
   geoms = _run_pipeline(geom, source_crs;
-    target_crs, simplify_tol, max_edge_length, bbox_size, verbose)
+    target_crs, simplify_alg, max_distance, bbox_size, verbose)
   verbose && println("\nMeshing: ", length(geoms), " component(s) → ",
                      output_name, split_components ? "/" : ".msh")
   generate_mesh(geoms, output_name;
@@ -121,10 +123,10 @@ function geoms_to_geo_3d(
   end
   geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
   geoms2d = _run_pipeline(geom_raw, source_crs;
-    target_crs      = get(kwargs, :target_crs,      "EPSG:3857"),
-    simplify_tol    = get(kwargs, :simplify_tol,    nothing),
-    max_edge_length = get(kwargs, :max_edge_length,  nothing),
-    bbox_size       = nothing,   # must not rescale before DEM sampling
+    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    simplify_alg = get(kwargs, :simplify_alg, nothing),
+    max_distance = get(kwargs, :max_distance, nothing),
+    bbox_size    = nothing,   # must not rescale before DEM sampling
     verbose,
   )
   verbose && println("\nReading DEM: ", dem_path)
@@ -132,8 +134,8 @@ function geoms_to_geo_3d(
   geoms3d = lift_to_3d(geoms2d, dem; nodata_fill = Float64(nodata_fill))
   verbose && println("\nWriting: ", output_name, ".geo")
   write_geo(geoms3d, output_name;
-    mesh_size      = get(kwargs, :mesh_size,      1.0),
-    mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
+    mesh_size        = get(kwargs, :mesh_size,        1.0),
+    mesh_algorithm   = get(kwargs, :mesh_algorithm,   nothing),
     split_components = get(kwargs, :split_components, false),
     verbose,
   )
@@ -172,10 +174,10 @@ function geoms_to_msh_3d(
   end
   geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
   geoms2d = _run_pipeline(geom_raw, source_crs;
-    target_crs      = get(kwargs, :target_crs,      "EPSG:3857"),
-    simplify_tol    = get(kwargs, :simplify_tol,    nothing),
-    max_edge_length = get(kwargs, :max_edge_length,  nothing),
-    bbox_size       = nothing,   # must not rescale before DEM sampling
+    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    simplify_alg = get(kwargs, :simplify_alg, nothing),
+    max_distance = get(kwargs, :max_distance, nothing),
+    bbox_size    = nothing,   # must not rescale before DEM sampling
     verbose,
   )
   verbose && println("\nReading DEM: ", dem_path)
@@ -184,10 +186,10 @@ function geoms_to_msh_3d(
   verbose && println("\nMeshing (3D): ", length(geoms3d), " component(s) → ",
                      output_name, ".msh")
   generate_mesh(geoms3d, dem, output_name;
-    mesh_size      = get(kwargs, :mesh_size,      1.0),
-    mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
-    order          = get(kwargs, :order,          1),
-    recombine      = get(kwargs, :recombine,      false),
+    mesh_size        = get(kwargs, :mesh_size,        1.0),
+    mesh_algorithm   = get(kwargs, :mesh_algorithm,   nothing),
+    order            = get(kwargs, :order,            1),
+    recombine        = get(kwargs, :recombine,        false),
     split_components = get(kwargs, :split_components, false),
     verbose,
   )
@@ -255,7 +257,7 @@ _apply_to_geoms(geom, f) = f(geom)
 # Run the full pre-Gmsh pipeline on raw GI geometry / DataFrame.
 function _run_pipeline(
   geom, source_crs;
-  target_crs, simplify_tol, max_edge_length, bbox_size, verbose,
+  target_crs, simplify_alg, max_distance, bbox_size, verbose,
 )
   # --- Reproject (on raw GI geometry, before ingest) ---
   if !isnothing(target_crs)
@@ -268,16 +270,15 @@ function _run_pipeline(
   end
 
   # --- Simplify (on raw GI geometry, before ingest) ---
-  if !isnothing(simplify_tol)
-    alg = MinEdgeLength(tol = Float64(simplify_tol))
-    verbose && println("\nSimplifying: min edge length = $simplify_tol")
-    geom = _apply_to_geoms(geom, g -> GO.simplify(alg, g))
+  if !isnothing(simplify_alg)
+    verbose && println("\nSimplifying: ", simplify_alg)
+    geom = _apply_to_geoms(geom, g -> GO.simplify(simplify_alg, g))
   end
 
   # --- Segmentize (on raw GI geometry, before ingest) ---
-  if !isnothing(max_edge_length)
-    md = Float64(max_edge_length)
-    verbose && println("\nSegmentizing: max edge length = $md")
+  if !isnothing(max_distance)
+    md = Float64(max_distance)
+    verbose && println("\nSegmentizing: max distance = $md")
     geom = _apply_to_geoms(geom, g -> GO.segmentize(g; max_distance = md))
   end
 

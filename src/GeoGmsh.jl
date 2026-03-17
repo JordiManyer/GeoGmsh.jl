@@ -14,7 +14,7 @@ using GeoGmsh
 using NaturalEarth
 geoms_to_geo(naturalearth("admin_0_countries", 110), "countries";
   target_crs   = "EPSG:3857",
-  simplify_tol = 5_000.0,
+  simplify_alg = MinEdgeLength(tol = 5_000.0),
   mesh_size    = 2.0,
 )
 
@@ -80,7 +80,7 @@ export ingest
 
 export read_geodata, list_components, read_shapefile
 
-export MinEdgeLength
+export MinEdgeLength, AngleFilter, ComposedAlg
 
 export rescale, filter_components
 
