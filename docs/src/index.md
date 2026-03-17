@@ -21,10 +21,10 @@ GeoInterface geometries.
 
 **3D terrain manifolds** by sampling a Digital Elevation Model at every mesh node:
 
-| |
-|:---:|
-| ![Mont Blanc terrain](assets/montblanc.png) |
-| **Mont Blanc** |
+| | |
+|:---:|:---:|
+| ![Mont Blanc terrain](assets/montblanc.png) | ![Everest terrain](assets/everest.png) |
+| **Mont Blanc** | **Everest** |
 
 ---
 

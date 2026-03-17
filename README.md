@@ -29,9 +29,11 @@ GeoJSON, GeoPackage, GeoParquet, NaturalEarth data, or raw geometries.
 <table>
   <tr>
     <td align="center"><b>Mont Blanc</b></td>
+    <td align="center"><b>Everest</b></td>
   </tr>
   <tr>
-    <td><img src="docs/src/assets/montblanc.png" alt="Mont Blanc terrain mesh" width="60%"/></td>
+    <td><img src="docs/src/assets/montblanc.png" alt="Mont Blanc terrain mesh" width="100%"/></td>
+    <td><img src="docs/src/assets/everest.png" alt="Everest terrain mesh" width="100%"/></td>
   </tr>
 </table>
 
