@@ -7,36 +7,37 @@ A Julia package that converts geospatial data into Gmsh geometry (`.geo`) and
 mesh (`.msh`) files. Accepts any GeoInterface-compatible source: Shapefiles,
 GeoJSON, GeoPackage, GeoParquet, NaturalEarth data, or raw geometries.
 
+**Flat 2D meshes** from any geospatial boundary:
+
 <table>
   <tr>
-    <td align="center"><b>France</b></td>
     <td align="center"><b>Iberian Peninsula</b></td>
-    <td align="center"><b>Spain</b></td>
     <td align="center"><b>Catalonia</b></td>
-  </tr>
-  <tr>
-    <td><img src="docs/src/assets/france.png" alt="France" width="100%"/></td>
-    <td><img src="docs/src/assets/iberia.png" alt="Iberia" width="100%"/></td>
-    <td><img src="docs/src/assets/spain.png" alt="Spain" width="100%"/></td>
-    <td><img src="docs/src/assets/catalonia.png" alt="Catalonia" width="100%"/></td>
-  </tr>
-  <tr>
     <td align="center"><b>Australia — geometry</b></td>
     <td align="center"><b>Australia — mesh</b></td>
-    <td align="center"><b>Mont Blanc (3D terrain)</b></td>
-    <td align="center"><b>Everest (3D terrain)</b></td>
   </tr>
   <tr>
+    <td><img src="docs/src/assets/iberia.png" alt="Iberia" width="100%"/></td>
+    <td><img src="docs/src/assets/catalonia.png" alt="Catalonia" width="100%"/></td>
     <td><img src="docs/src/assets/australia_geo.png" alt="Australia geometry" width="100%"/></td>
     <td><img src="docs/src/assets/australia_mesh.png" alt="Australia mesh" width="100%"/></td>
-    <td><img src="docs/src/assets/montblanc.png" alt="Mont Blanc" width="100%"/></td>
-    <td><img src="docs/src/assets/everest.png" alt="Everest" width="100%"/></td>
+  </tr>
+</table>
+
+**3D terrain manifolds** by sampling a Digital Elevation Model at every mesh node:
+
+<table>
+  <tr>
+    <td align="center"><b>Mont Blanc</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/src/assets/montblanc.png" alt="Mont Blanc terrain mesh" width="60%"/></td>
   </tr>
 </table>
 
 ## Features
 
-- **Universal reader** — load any geospatial format through a single `read_geodata` call backed by GDAL. Read directly from ZIP archives via `/vsizip/`.
+- **Universal reader** — load any geospatial format (Shapefile, GeoJSON, GeoPackage, GeoParquet, …) through a single `read_geodata` call backed by GDAL. Read directly from ZIP archives via `/vsizip/`.
 - **Reproject** — convert between coordinate systems via Proj.jl (e.g. geographic degrees → UTM metres).
 - **Simplify** — `MinEdgeLength` removes short edges; `AngleFilter` suppresses zig-zag spikes; compose algorithms with `∘`.
 - **Segmentize** — subdivide long edges to control maximum element size.
@@ -72,18 +73,6 @@ geoms_to_msh(countries, "france";
 ```julia
 using GeoGmsh
 
-# From any file — Shapefile, GeoJSON, GeoPackage, ZIP, …
-geoms_to_msh("NUTS_RG_01M_2024_4326_LEVL_0.geojson", "germany";
-  select       = row -> row.NUTS_ID == "DE" && row.ring == 1,
-  target_crs   = "EPSG:3857",
-  simplify_alg = MinEdgeLength(tol = 10_000.0),
-  bbox_size    = 100.0,
-  mesh_size    = 2.0,
-)
-# → germany.msh
-```
-
-```julia
 # 3D terrain mesh from a bounding box + DEM
 geoms_to_msh_3d("bbox.geojson", "dem_utm.tif", "terrain";
   target_crs   = "EPSG:32632",
@@ -98,6 +87,7 @@ full pipeline guide, API reference, and worked examples.
 
 ## Data sources
 
-- **NUTS** (Spain, Catalonia, Navarre, Iberia): Eurostat / GISCO, © European Union.
-- **ASGS Edition 3** (Australia): Australian Bureau of Statistics.
-- **Copernicus GLO-30 DEM** (Mont Blanc, Everest, Pyrenees): © DLR / Airbus.
+- **Natural Earth**: [naturalearthdata.com](https://www.naturalearthdata.com/) — free vector map data.
+- **NUTS**: Eurostat / GISCO, © European Union.
+- **ASGS Edition 3**: Australian Bureau of Statistics.
+- **Copernicus GLO-30 DEM**: © DLR / Airbus.

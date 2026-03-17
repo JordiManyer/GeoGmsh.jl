@@ -12,16 +12,19 @@ GeoInterface geometries.
 
 ---
 
-| | |
-|:---:|:---:|
-| ![France mesh](assets/france.png) | ![Iberia mesh](assets/iberia.png) |
-| **France** | **Iberian Peninsula** |
-| ![Spain mesh](assets/spain.png) | ![Catalonia mesh](assets/catalonia.png) |
-| **Spain** | **Catalonia** |
-| ![Australia geometry](assets/australia_geo.png) | ![Australia mesh](assets/australia_mesh.png) |
-| **Australia — geometry** | **Australia — mesh** |
-| ![Mont Blanc terrain](assets/montblanc.png) | ![Everest terrain](assets/everest.png) |
-| **Mont Blanc (3D terrain)** | **Everest (3D terrain)** |
+**Flat 2D meshes** from any geospatial boundary:
+
+| | | | |
+|:---:|:---:|:---:|:---:|
+| ![Iberia](assets/iberia.png) | ![Catalonia](assets/catalonia.png) | ![Australia geometry](assets/australia_geo.png) | ![Australia mesh](assets/australia_mesh.png) |
+| **Iberian Peninsula** | **Catalonia** | **Australia — geometry** | **Australia — mesh** |
+
+**3D terrain manifolds** by sampling a Digital Elevation Model at every mesh node:
+
+| |
+|:---:|
+| ![Mont Blanc terrain](assets/montblanc.png) |
+| **Mont Blanc** |
 
 ---
 
@@ -113,10 +116,10 @@ or browse the **Examples** section in the sidebar for full worked examples.
 
 ## Data sources
 
-The meshes above were generated from the following open datasets:
-
-- **NUTS — Territorial units statistics** (Spain, Catalonia, Navarre, Iberia): Eurostat / GISCO, © European Union.
+- **Natural Earth** (France, China): [https://www.naturalearthdata.com](https://www.naturalearthdata.com) — free vector map data, public domain.
+- **NUTS** (Spain, Catalonia, Iberia): Eurostat / GISCO, © European Union.
   [https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics](https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics)
 - **ASGS Edition 3** (Australia): Australian Bureau of Statistics.
   [https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3](https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3)
-- **Copernicus GLO-30 DEM** (Mont Blanc, Everest, Pyrenees): © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018. Freely available from the [Copernicus programme](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model).
+- **Copernicus GLO-30 DEM** (Mont Blanc, Everest): © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018.
+  [https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
