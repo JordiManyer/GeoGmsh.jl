@@ -1,12 +1,13 @@
 # # Everest — 3D terrain mesh
 #
-# This example produces a terrain-following 3D surface mesh for the Mount
-# Everest region using a user-defined bounding box and Copernicus GLO-30 DEM
-# tiles.  The workflow is identical to the Mont Blanc example but covers a
+# This example produces terrain-following 3D surface and volume meshes for the
+# Mount Everest region using a user-defined bounding box and Copernicus GLO-30
+# DEM tiles.  The workflow is identical to the Mont Blanc example but covers a
 # larger area (four DEM tiles) and uses UTM zone 45N.
 #
 # **Features highlighted:**
-# - 3D terrain meshing with `geoms_to_msh_3d` over a larger multi-tile domain
+# - 3D surface and volume meshing with `geoms_to_msh_3d` and
+#   `geoms_to_msh_3d_volume` over a larger multi-tile domain
 # - Choosing the correct UTM zone for the area of interest (zone 45N for Nepal)
 #
 # !!! note "Aspect ratio"
@@ -105,7 +106,10 @@ if !isfile(dem_tif_utm)
   println("  Saved: ", dem_tif_utm)
 end
 
-# ## 3D terrain mesh
+# ## 3D terrain meshes
+#
+# A depth of 1,000 m gives a thin but clearly visible pedestal relative to the
+# ~6,000 m of vertical relief in the domain.
 
 output = joinpath(data_dir, "everest")
 
@@ -114,6 +118,16 @@ geoms_to_msh_3d(
   target_crs   = "EPSG:32645",
   simplify_alg = MinEdgeLength(tol = 500.0),
   mesh_size    = 500.0,
+  nodata_fill  = 0.0,
+  verbose      = true,
+)
+
+geoms_to_msh_3d_volume(
+  bbox_path, dem_tif_utm, output * "_volume";
+  target_crs   = "EPSG:32645",
+  simplify_alg = MinEdgeLength(tol = 500.0),
+  mesh_size    = 500.0,
+  depth        = 1_000.0,
   nodata_fill  = 0.0,
   verbose      = true,
 )

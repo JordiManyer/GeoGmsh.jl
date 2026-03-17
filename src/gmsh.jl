@@ -520,6 +520,161 @@ function _write_contour_3d(
   return line_ids, pt_id, line_id
 end
 
+# ============================================================================
+# generate_mesh_volume — volumetric (tetrahedral) mesh via prism extrusion
+# ============================================================================
+
+"""
+    generate_mesh_volume(geoms, dem, name; depth, mesh_size=1.0,
+                         mesh_algorithm=nothing, verbose=false)
+
+Generate a volumetric tetrahedral mesh by extruding the terrain surface
+downward to a flat bottom at `z_bottom = min(z_terrain) - depth`.
+
+The algorithm:
+1. Generate a flat 2D triangle mesh from `geoms`.
+2. Sample `dem` at every mesh node to get `z_top`.
+3. Mirror the node set at `z_bottom = min(z_top) - depth`.
+4. Split each triangular prism into 3 tetrahedra.
+5. Write the result as a `.msh` file.
+
+# Arguments
+- `geoms`  — `Vector{Geometry3D}` (only the 2D base geometry is used).
+- `dem`    — [`DEMRaster`](@ref) for elevation sampling.
+- `name`   — output path **without** the `.msh` extension.
+
+# Keyword arguments
+- `depth`          — vertical thickness of the volume (same units as the CRS).
+- `mesh_size`      — characteristic element length (default `1.0`).
+- `mesh_algorithm` — Gmsh 2D algorithm tag (default: Gmsh's built-in default).
+- `verbose`        — print progress (default `false`).
+"""
+function generate_mesh_volume(
+  geoms          :: Vector{Geometry3D},
+  dem            :: DEMRaster,
+  name           :: AbstractString;
+  depth          :: Real,
+  mesh_size      :: Real               = 1.0,
+  mesh_algorithm :: Union{Int,Nothing} = nothing,
+  verbose        :: Bool               = false,
+)
+  stats = _generate_mesh_volume_single(geoms, dem, name * ".msh";
+    mesh_size, mesh_algorithm, depth = Float64(depth))
+  if verbose
+    println("  Nodes      : $(_fmt(stats.nodes))   Elements : $(_fmt(stats.elements))")
+    println("  Written    : ", name, ".msh")
+  end
+  return name
+end
+
+function _generate_mesh_volume_single(
+  geoms          :: Vector{Geometry3D},
+  dem            :: DEMRaster,
+  path           :: AbstractString;
+  mesh_size,
+  mesh_algorithm,
+  depth          :: Float64,
+) :: NamedTuple
+  lc = Float64(mesh_size)
+
+  # ── Step 1: generate flat 2D triangle mesh, capture nodes + connectivity ──
+  node_tags_2d   = Vector{Int}()
+  coords_2d      = Vector{Float64}()
+  tri_nodes_flat = Vector{Int}()
+
+  gmsh.initialize()
+  try
+    gmsh.option.setNumber("General.Verbosity", 2)
+    gmsh.model.add("_2d_tmp")
+
+    pt_id = line_id = loop_id = surf_id = 0
+    for g in geoms
+      pt_id, line_id, loop_id, surf_id =
+        _add_geometry(g.base, pt_id, line_id, loop_id, surf_id, lc)
+    end
+    gmsh.model.geo.synchronize()
+
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
+    !isnothing(mesh_algorithm) &&
+      gmsh.option.setNumber("Mesh.Algorithm", Float64(mesh_algorithm))
+
+    gmsh.model.mesh.generate(2)
+
+    tags, coords, _ = gmsh.model.mesh.getNodes()
+    append!(node_tags_2d, tags)
+    append!(coords_2d,    coords)
+
+    etypes, _, enodes = gmsh.model.mesh.getElements(2)
+    tri_idx = findfirst(==(2), etypes)   # element type 2 = linear triangle
+    !isnothing(tri_idx) && append!(tri_nodes_flat, enodes[tri_idx])
+  finally
+    gmsh.finalize()
+  end
+
+  n_nodes = length(node_tags_2d)
+  n_tris  = length(tri_nodes_flat) ÷ 3
+  tag_to_idx = Dict{Int,Int}(tag => i for (i, tag) in enumerate(node_tags_2d))
+
+  # ── Step 2: sample DEM for terrain elevation at every node ─────────────────
+  pts_2d = NTuple{2,Float64}[(coords_2d[3i-2], coords_2d[3i-1]) for i in 1:n_nodes]
+  z_top  = sample_elevation(pts_2d, dem)
+  z_bot  = minimum(z_top) - depth
+
+  # ── Step 3: build the volumetric mesh in a new Gmsh session ────────────────
+  gmsh.initialize()
+  try
+    gmsh.option.setNumber("General.Verbosity", 2)
+    gmsh.model.add("GeoGmsh3DVolume")
+
+    vol_tag = gmsh.model.addDiscreteEntity(3)
+
+    # Node tags: top layer = 1..n_nodes, bottom = n_nodes+1..2*n_nodes.
+    all_node_tags = collect(1:2*n_nodes)
+    all_coords    = Vector{Float64}(undef, 6 * n_nodes)
+    for i in 1:n_nodes
+      x = coords_2d[3i-2]
+      y = coords_2d[3i-1]
+      j = n_nodes + i
+      all_coords[3i-2] = x;  all_coords[3i-1] = y;  all_coords[3i  ] = z_top[i]
+      all_coords[3j-2] = x;  all_coords[3j-1] = y;  all_coords[3j  ] = z_bot
+    end
+    gmsh.model.mesh.addNodes(3, vol_tag, all_node_tags, all_coords)
+
+    # Split each prism into 3 tetrahedra with positive Jacobian.
+    # For a prism with top CCW (t0,t1,t2) and bottom (b0,b1,b2) directly below:
+    #   Tet 1: (b0, b1, b2, t0)
+    #   Tet 2: (t0, b1, b2, t2)
+    #   Tet 3: (t0, t1, b1, t2)
+    n_tets    = 3 * n_tris
+    tet_tags  = collect(1:n_tets)
+    tet_nodes = Vector{Int}(undef, 4 * n_tets)
+
+    for k in 1:n_tris
+      top0 = tag_to_idx[tri_nodes_flat[3k-2]]
+      top1 = tag_to_idx[tri_nodes_flat[3k-1]]
+      top2 = tag_to_idx[tri_nodes_flat[3k  ]]
+      bot0 = n_nodes + top0
+      bot1 = n_nodes + top1
+      bot2 = n_nodes + top2
+      base = 12 * (k - 1)
+      tet_nodes[base+ 1] = bot0;  tet_nodes[base+ 2] = bot1
+      tet_nodes[base+ 3] = bot2;  tet_nodes[base+ 4] = top0
+      tet_nodes[base+ 5] = top0;  tet_nodes[base+ 6] = bot1
+      tet_nodes[base+ 7] = bot2;  tet_nodes[base+ 8] = top2
+      tet_nodes[base+ 9] = top0;  tet_nodes[base+10] = top1
+      tet_nodes[base+11] = bot1;  tet_nodes[base+12] = top2
+    end
+
+    gmsh.model.mesh.addElements(3, vol_tag, [4], [tet_tags], [tet_nodes])
+    gmsh.write(path)
+
+    return (; nodes = 2 * n_nodes, elements = n_tets)
+  finally
+    gmsh.finalize()
+  end
+end
+
 function _generate_mesh_single_3d(
   geoms          :: Vector{Geometry3D},
   dem            :: DEMRaster,

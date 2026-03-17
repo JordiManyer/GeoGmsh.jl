@@ -88,11 +88,13 @@ export DEMRaster, read_dem, sample_elevation, lift_to_3d
 
 export write_geo
 export generate_mesh
+export generate_mesh_volume
 
 export geoms_to_geo
 export geoms_to_msh
 export geoms_to_geo_3d
 export geoms_to_msh_3d
+export geoms_to_msh_3d_volume
 export shapefile_to_geo
 export shapefile_to_msh
 

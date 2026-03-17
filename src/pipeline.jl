@@ -196,6 +196,58 @@ function geoms_to_msh_3d(
   return output_name
 end
 
+"""
+    geoms_to_msh_3d_volume(geom, dem_path, output_name; depth, kwargs...) -> String
+
+Generate a **volumetric** (tetrahedral) terrain mesh.
+
+Runs the same pipeline as [`geoms_to_msh_3d`](@ref) to produce a terrain
+surface mesh, then extrudes it downward to a flat bottom plane at
+`z_bottom = min(z_terrain) - depth`, splitting each triangular prism into
+3 tetrahedra.
+
+The DEM must be in the same CRS as the (reprojected) vector data.  `bbox_size`
+is silently ignored for the same reason as in [`geoms_to_msh_3d`](@ref).
+
+# Keyword arguments
+All keyword arguments of [`geoms_to_msh_3d`](@ref) are supported, plus:
+- `depth` — (**required**) vertical thickness of the volume below the terrain
+             minimum, in the same units as the CRS (metres for a projected CRS).
+"""
+function geoms_to_msh_3d_volume(
+  geom,
+  dem_path     :: AbstractString,
+  output_name  :: AbstractString;
+  depth        :: Real,
+  nodata_fill  :: Real = 0.0,
+  verbose      :: Bool = true,
+  kwargs...,
+)
+  if !isnothing(get(kwargs, :bbox_size, nothing))
+    @warn "`bbox_size` is not supported in `geoms_to_msh_3d_volume` and will be ignored."
+  end
+  geom_raw, source_crs = _load(geom; select = get(kwargs, :select, nothing), verbose)
+  geoms2d = _run_pipeline(geom_raw, source_crs;
+    target_crs   = get(kwargs, :target_crs,   "EPSG:3857"),
+    simplify_alg = get(kwargs, :simplify_alg, nothing),
+    max_distance = get(kwargs, :max_distance, nothing),
+    bbox_size    = nothing,
+    verbose,
+  )
+  verbose && println("\nReading DEM: ", dem_path)
+  dem     = read_dem(dem_path)
+  geoms3d = lift_to_3d(geoms2d, dem; nodata_fill = Float64(nodata_fill))
+  verbose && println("\nMeshing (3D volume): ", length(geoms3d), " component(s) → ",
+                     output_name, ".msh")
+  generate_mesh_volume(geoms3d, dem, output_name;
+    depth,
+    mesh_size      = get(kwargs, :mesh_size,      1.0),
+    mesh_algorithm = get(kwargs, :mesh_algorithm, nothing),
+    verbose,
+  )
+  return output_name
+end
+
 # ---------------------------------------------------------------------------
 # Backward-compatible wrappers
 # ---------------------------------------------------------------------------

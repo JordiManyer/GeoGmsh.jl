@@ -1,16 +1,20 @@
 # # Mont Blanc — 3D terrain mesh
 #
-# This example produces a terrain-following 3D surface mesh for the Mont Blanc
-# massif using a user-defined bounding box and a Copernicus GLO-30 Digital
-# Elevation Model.
+# This example produces two terrain-following meshes for the Mont Blanc massif
+# using a user-defined bounding box and a Copernicus GLO-30 Digital Elevation
+# Model:
+#
+# - **Surface mesh** (`geoms_to_msh_3d`): a single terrain-following surface
+#   with z-coordinates sampled from the DEM.
+# - **Volume mesh** (`geoms_to_msh_3d_volume`): the same surface extruded
+#   downward by `depth` metres to form a solid tetrahedral block.
 #
 # **Features highlighted:**
 # - Defining the domain as a bounding-box GeoJSON polygon (no administrative
 #   boundary needed)
 # - Downloading and mosaicking Copernicus GLO-30 DEM tiles with `GDAL_jll`
-# - `geoms_to_msh_3d`: generates a flat 2D mesh then lifts every node's
-#   z-coordinate by sampling the DEM
-# - Choosing a UTM CRS so that `mesh_size` is in metres
+# - `geoms_to_msh_3d` and `geoms_to_msh_3d_volume`
+# - Choosing a UTM CRS so that `mesh_size` and `depth` are in metres
 #
 # !!! note "Aspect ratio"
 #     The Mont Blanc massif spans ~37 km × ~27 km horizontally but only
@@ -116,13 +120,18 @@ if !isfile(dem_tif_utm)
   println("  Saved: ", dem_tif_utm)
 end
 
-# ## 3D terrain mesh
+# ## 3D terrain meshes
 #
 # `geoms_to_msh_3d` runs the standard 2D pipeline (reproject → simplify →
 # ingest) and then lifts every mesh node's z-coordinate by bilinearly
 # interpolating the DEM at its (x, y) position.
 # `mesh_size = 500.0` gives ~500 m characteristic element length (in metres,
 # consistent with the UTM CRS).
+#
+# `geoms_to_msh_3d_volume` does the same but also extrudes the surface
+# downward by `depth` metres to produce a solid tetrahedral mesh.
+# A depth of 1,000 m gives a thin but clearly visible pedestal relative to the
+# ~4,800 m of vertical relief in the massif.
 
 output = joinpath(data_dir, "montblanc")
 
@@ -131,6 +140,16 @@ geoms_to_msh_3d(
   target_crs   = "EPSG:32632",
   simplify_alg = MinEdgeLength(tol = 500.0),
   mesh_size    = 500.0,
+  nodata_fill  = 0.0,
+  verbose      = true,
+)
+
+geoms_to_msh_3d_volume(
+  bbox_path, dem_tif_utm, output * "_volume";
+  target_crs   = "EPSG:32632",
+  simplify_alg = MinEdgeLength(tol = 500.0),
+  mesh_size    = 500.0,
+  depth        = 1_000.0,
   nodata_fill  = 0.0,
   verbose      = true,
 )
