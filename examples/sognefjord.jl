@@ -87,13 +87,23 @@ dem_tif = prepare_dem(
 # separating the two sub-volumes ("Volume_Below" and "Volume_Above").
 # "Bottom", "Top", and "Sides" are the outer boundary faces.
 
+geoms_to_geo_3d(
+  bbox_path, dem_tif,
+  joinpath(data_dir, "sognefjord_surface");
+  target_crs   = "EPSG:32632",
+  simplify_alg = MinEdgeLength(tol = 500.0),
+  mesh_size    = 500.0,
+  nodata_fill  = 0.0,
+  verbose      = true,
+)
+
 geoms_to_msh_3d_volume(
   bbox_path, dem_tif,
   joinpath(data_dir, "sognefjord_volume");
   target_crs   = "EPSG:32632",
-  simplify_alg = MinEdgeLength(tol = 2_000.0),
-  mesh_size    = 5_000.0,
-  depth        = (1_500.0, 500.0),
+  simplify_alg = MinEdgeLength(tol = 500.0),
+  mesh_size    = 500.0,
+  depth        = (500.0, 100.0),
   nodata_fill  = 0.0,
   verbose      = true,
 )

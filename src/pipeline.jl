@@ -138,6 +138,8 @@ function geoms_to_geo_3d(
     mesh_size        = get(kwargs, :mesh_size,        1.0),
     mesh_algorithm   = get(kwargs, :mesh_algorithm,   nothing),
     split_components = get(kwargs, :split_components, false),
+    dem,
+    nodata_fill      = Float64(nodata_fill),
     verbose,
   )
   return output_name

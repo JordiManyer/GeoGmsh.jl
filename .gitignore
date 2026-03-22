@@ -1,2 +1,4 @@
 /Manifest*.toml
+/LocalPreferences.toml
 /data/
+CLAUDE.md

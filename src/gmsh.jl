@@ -395,29 +395,41 @@ end
     write_geo(geoms, name; kwargs...)
 
 `Geometry3D` overload: writes boundary points with their terrain elevation
-(non-zero z). Interior elevation is not encoded in the `.geo` file — use
-[`generate_mesh`](@ref) with a `DEMRaster` to lift interior mesh nodes.
+(non-zero z).
 
-Keyword arguments are identical to the 2D version.
+When `dem` is provided, interior points are sampled on a regular grid at
+spacing `max(mesh_size, DEM pixel size)`, filtered to lie inside each polygon,
+and embedded in the surface via `Point{...} In Surface{...};`. This encodes
+the full terrain curvature in the `.geo` file so that `gmsh name.geo -2`
+produces a terrain-following surface mesh without any additional post-processing.
+
+When `dem` is `nothing` (default), only boundary elevation is written.
+
+Keyword arguments are identical to the 2D version, plus:
+- `dem`         — optional [`DEMRaster`](@ref) for interior elevation sampling.
+- `nodata_fill` — elevation used for nodata / out-of-bounds cells (default `0.0`).
 """
 function write_geo(
   geoms            :: Vector{Geometry3D},
   name             :: AbstractString;
-  mesh_size        :: Real               = 1.0,
-  mesh_algorithm   :: Union{Int,Nothing} = nothing,
-  split_components :: Bool               = false,
-  verbose          :: Bool               = false,
+  mesh_size        :: Real                      = 1.0,
+  mesh_algorithm   :: Union{Int,Nothing}        = nothing,
+  split_components :: Bool                      = false,
+  dem              :: Union{DEMRaster,Nothing}  = nothing,
+  nodata_fill      :: Real                      = 0.0,
+  verbose          :: Bool                      = false,
 )
+  nf = Float64(nodata_fill)
   if split_components
     mkpath(name)
     n  = length(geoms)
     nd = ndigits(n)
     for (i, g) in enumerate(geoms)
       bname = (isempty(g.base.name) ? lpad(i, nd, '0') : g.base.name) * ".geo"
-      _write_geo_single_3d([g], joinpath(name, bname); mesh_size, mesh_algorithm)
+      _write_geo_single_3d([g], joinpath(name, bname); mesh_size, mesh_algorithm, dem, nodata_fill = nf)
     end
   else
-    _write_geo_single_3d(geoms, name * ".geo"; mesh_size, mesh_algorithm)
+    _write_geo_single_3d(geoms, name * ".geo"; mesh_size, mesh_algorithm, dem, nodata_fill = nf)
     verbose && println("  Written    : ", name, ".geo")
   end
   return name
@@ -475,6 +487,8 @@ function _write_geo_single_3d(
   path           :: AbstractString;
   mesh_size      :: Real,
   mesh_algorithm,
+  dem            :: Union{DEMRaster,Nothing} = nothing,
+  nodata_fill    :: Float64                  = 0.0,
 )
   lc = Float64(mesh_size)
   open(path, "w") do io
@@ -482,12 +496,13 @@ function _write_geo_single_3d(
     pt_id = line_id = loop_id = surf_id = 1
     for g in geoms
       pt_id, line_id, loop_id, surf_id =
-        _write_geometry_3d(io, g, pt_id, line_id, loop_id, surf_id, lc)
+        _write_geometry_3d(io, g, pt_id, line_id, loop_id, surf_id, lc, dem, nodata_fill)
     end
   end
 end
 
-function _write_geometry_3d(io, g::Geometry3D, pt_id, line_id, loop_id, surf_id, lc)
+function _write_geometry_3d(io, g::Geometry3D, pt_id, line_id, loop_id, surf_id, lc,
+                             dem::Union{DEMRaster,Nothing}, nodata_fill::Float64)
   ext_line_ids, pt_id, line_id =
     _write_contour_3d(io, g.base.exterior, g.z_exterior, pt_id, line_id, lc, "exterior")
   ext_loop_id = loop_id
@@ -507,10 +522,91 @@ function _write_geometry_3d(io, g::Geometry3D, pt_id, line_id, loop_id, surf_id,
   all_loops = vcat(ext_loop_id, hole_loop_ids)
   # Use Plane Surface; Gmsh will project to best-fit plane for non-flat domains.
   println(io, "Plane Surface($surf_id) = {$(join(all_loops, ", "))};")
+
+  if !isnothing(dem)
+    interior_pt_ids, pt_id = _write_interior_dem_points!(
+      io, g.base, dem, pt_id, lc, nodata_fill)
+    if !isempty(interior_pt_ids)
+      println(io, "Point{$(join(interior_pt_ids, ", "))} In Surface{$surf_id};")
+    end
+  end
+
   surf_id += 1
   println(io)
 
   return pt_id, line_id, loop_id, surf_id
+end
+
+# Sample DEM on a regular grid inside the polygon, write Point entries, return ids.
+function _write_interior_dem_points!(
+  io          :: IO,
+  g           :: Geometry2D,
+  dem         :: DEMRaster,
+  pt_id_start :: Int,
+  lc          :: Float64,
+  nodata_fill :: Float64,
+) :: Tuple{Vector{Int}, Int}
+  # Grid spacing: no finer than DEM pixel size
+  spacing = max(lc, abs(dem.transform[2]))
+
+  xs = [p[1] for p in g.exterior.points]
+  ys = [p[2] for p in g.exterior.points]
+  x_min, x_max = minimum(xs), maximum(xs)
+  y_min, y_max = minimum(ys), maximum(ys)
+
+  # Collect candidate grid points strictly inside the polygon
+  interior_pts = NTuple{2,Float64}[]
+  x = x_min + spacing
+  while x < x_max
+    y = y_min + spacing
+    while y < y_max
+      if _point_in_polygon((x, y), g.exterior, g.holes)
+        push!(interior_pts, (x, y))
+      end
+      y += spacing
+    end
+    x += spacing
+  end
+
+  isempty(interior_pts) && return Int[], pt_id_start
+
+  z_vals = sample_elevation(interior_pts, dem; nodata_fill)
+
+  println(io, "// interior DEM points ($(length(interior_pts)))")
+  pt_ids = Int[]
+  pt_id  = pt_id_start
+  for ((xi, yi), zi) in zip(interior_pts, z_vals)
+    @printf(io, "Point(%d) = {%.15g, %.15g, %.15g, %.15g};\n", pt_id, xi, yi, zi, lc)
+    push!(pt_ids, pt_id)
+    pt_id += 1
+  end
+  println(io)
+
+  return pt_ids, pt_id
+end
+
+function _point_in_polygon(pt::NTuple{2,Float64}, exterior::Contour, holes::Vector{Contour})
+  _ray_cast(pt, exterior.points) || return false
+  for hole in holes
+    _ray_cast(pt, hole.points) && return false
+  end
+  return true
+end
+
+function _ray_cast(pt::NTuple{2,Float64}, ring::Vector{NTuple{2,Float64}})
+  x, y   = pt
+  n      = length(ring)
+  inside = false
+  j      = n
+  for i in 1:n
+    xi, yi = ring[i]
+    xj, yj = ring[j]
+    if ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+      inside = !inside
+    end
+    j = i
+  end
+  return inside
 end
 
 function _write_contour_3d(
