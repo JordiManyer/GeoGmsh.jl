@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Spain &amp; Catalonia (2D) · GeoGmsh.jl</title><meta name="title" content="Spain &amp; Catalonia (2D) · GeoGmsh.jl"/><meta property="og:title" content="Spain &amp; Catalonia (2D) · GeoGmsh.jl"/><meta property="twitter:title" content="Spain &amp; Catalonia (2D) · GeoGmsh.jl"/><meta name="description" content="Documentation for GeoGmsh.jl."/><meta property="og:description" content="Documentation for GeoGmsh.jl."/><meta property="twitter:description" content="Documentation for GeoGmsh.jl."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">GeoGmsh.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><a class="tocitem" href="../../pipeline/">Pipeline guide</a></li><li><span class="tocitem">Examples</span><ul><li><a class="tocitem" href="../naturalearth/">NaturalEarth (2D)</a></li><li><a class="tocitem" href="../australia/">Australia (2D)</a></li><li class="is-active"><a class="tocitem" href>Spain &amp; Catalonia (2D)</a><ul class="internal"><li><a class="tocitem" href="#Download"><span>Download</span></a></li><li><a class="tocitem" href="#Mainland-Spain"><span>Mainland Spain</span></a></li><li><a class="tocitem" href="#Catalonia"><span>Catalonia</span></a></li></ul></li><li><a class="tocitem" href="../iberia/">Iberian Peninsula (2D)</a></li><li><a class="tocitem" href="../montblanc/">Mont Blanc (3D terrain)</a></li><li><a class="tocitem" href="../everest/">Everest (3D terrain)</a></li></ul></li><li><a class="tocitem" href="../../api/">API reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Examples</a></li><li class="is-active"><a href>Spain &amp; Catalonia (2D)</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Spain &amp; Catalonia (2D)</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/JordiManyer/GeoGmsh.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/JordiManyer/GeoGmsh.jl/blob/master/docs/src/examples/spain.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Spain-and-Catalonia-(2D)"><a class="docs-heading-anchor" href="#Spain-and-Catalonia-(2D)">Spain and Catalonia (2D)</a><a id="Spain-and-Catalonia-(2D)-1"></a><a class="docs-heading-anchor-permalink" href="#Spain-and-Catalonia-(2D)" title="Permalink"></a></h1><p>This example downloads NUTS administrative boundaries from Eurostat GISCO and produces two separate meshes: mainland Spain (country level, NUTS-0) and Catalonia (region level, NUTS-2).</p><p><strong>Features highlighted:</strong></p><ul><li>Downloading and reading GeoJSON files from Eurostat GISCO</li><li>Selecting features by NUTS ID and ring index</li><li>Composing simplification algorithms with <code>∘</code>: <code>AngleFilter ∘ MinEdgeLength</code> applies minimum-edge-length first, then removes zig-zag spikes by angle</li><li>Using different NUTS levels (NUTS-0 vs NUTS-2) for country vs. region</li></ul><blockquote><p><strong>NUTS levels</strong></p><p>NUTS-0 = countries (e.g. <code>&quot;ES&quot;</code> for Spain). NUTS-2 = regions (e.g. <code>&quot;ES51&quot;</code> for Catalonia). They are distributed in separate files.</p></blockquote><table><tr><th style="text-align: center">Spain</th><th style="text-align: center">Catalonia</th></tr><tr><td style="text-align: center"><img src="../../assets/spain.png" alt="Spain mesh"/></td><td style="text-align: center"><img src="../../assets/catalonia.png" alt="Catalonia mesh"/></td></tr></table><pre><code class="language-julia hljs">using GeoGmsh
+using Downloads
+import GeometryOps as GO
+
+data_dir = joinpath(@__DIR__, &quot;..&quot;, &quot;data&quot;)
+mkpath(data_dir)</code></pre><h2 id="Download"><a class="docs-heading-anchor" href="#Download">Download</a><a id="Download-1"></a><a class="docs-heading-anchor-permalink" href="#Download" title="Permalink"></a></h2><p>Two NUTS files are needed: NUTS-0 for the country outline and NUTS-2 for the regional breakdown.</p><pre><code class="language-julia hljs">base_url = &quot;https://gisco-services.ec.europa.eu/distribution/v2/nuts/geojson/&quot;
+
+nuts0_url  = base_url * &quot;NUTS_RG_01M_2024_4326_LEVL_0.geojson&quot;
+nuts0_path = joinpath(data_dir, &quot;NUTS_RG_01M_2024_4326_LEVL_0.geojson&quot;)
+
+nuts2_url  = base_url * &quot;NUTS_RG_01M_2024_4326_LEVL_2.geojson&quot;
+nuts2_path = joinpath(data_dir, &quot;NUTS_RG_01M_2024_4326_LEVL_2.geojson&quot;)
+
+if !isfile(nuts0_path)
+  println(&quot;Downloading NUTS-0 boundaries…&quot;)
+  Downloads.download(nuts0_url, nuts0_path)
+  println(&quot;  Saved: &quot;, nuts0_path)
+end
+
+if !isfile(nuts2_path)
+  println(&quot;Downloading NUTS-2 boundaries (~16 MB)…&quot;)
+  Downloads.download(nuts2_url, nuts2_path)
+  println(&quot;  Saved: &quot;, nuts2_path)
+end</code></pre><h2 id="Mainland-Spain"><a class="docs-heading-anchor" href="#Mainland-Spain">Mainland Spain</a><a id="Mainland-Spain-1"></a><a class="docs-heading-anchor-permalink" href="#Mainland-Spain" title="Permalink"></a></h2><p>The NUTS-0 <code>&quot;ES&quot;</code> feature is a MultiPolygon whose largest component (<code>ring == 1</code>) is the Iberian mainland.</p><p>The composed algorithm <code>AngleFilter(tol=20°) ∘ MinEdgeLength(tol=10 km)</code> first removes short edges (≤ 10 km), then iteratively removes vertices where the interior angle is shallower than 20°, eliminating zig-zag spikes along the coastline.</p><pre><code class="language-julia hljs">println(&quot;\n=== Spain (mainland) ===&quot;)
+
+println(&quot;\nNUTS-0 Spain components (sorted by area):&quot;)
+comps = list_components(nuts0_path)
+comps = filter(row -&gt; row.NUTS_ID == &quot;ES&quot;, comps)
+sort!(comps, :area, rev = true)
+println(comps)
+
+spain_alg = AngleFilter(tol = 20.0) ∘ MinEdgeLength(tol = 10_000.0)
+
+geoms_to_geo(
+  nuts0_path, joinpath(data_dir, &quot;spain&quot;);
+  select       = row -&gt; row.NUTS_ID == &quot;ES&quot; &amp;&amp; row.ring == 1,
+  target_crs   = &quot;EPSG:3857&quot;,
+  simplify_alg = spain_alg,
+  bbox_size    = 100.0,
+  verbose      = true,
+)
+
+geoms_to_msh(
+  nuts0_path, joinpath(data_dir, &quot;spain&quot;);
+  select       = row -&gt; row.NUTS_ID == &quot;ES&quot; &amp;&amp; row.ring == 1,
+  target_crs   = &quot;EPSG:3857&quot;,
+  simplify_alg = spain_alg,
+  bbox_size    = 100.0,
+  mesh_size    = 2.0,
+  verbose      = true,
+)</code></pre><h2 id="Catalonia"><a class="docs-heading-anchor" href="#Catalonia">Catalonia</a><a id="Catalonia-1"></a><a class="docs-heading-anchor-permalink" href="#Catalonia" title="Permalink"></a></h2><p>Catalonia (<code>&quot;ES51&quot;</code>) is a NUTS-2 region on the north-east coast of Spain. We use the finer NUTS-2 file, with <code>MinEdgeLength</code> only (the boundary is smoother at this scale so angle filtering is not needed).</p><pre><code class="language-julia hljs">println(&quot;\n=== Catalonia (ES51) ===&quot;)
+
+println(&quot;\nNUTS-2 Catalonia components (sorted by area):&quot;)
+comps2 = list_components(nuts2_path)
+comps2 = filter(row -&gt; row.NUTS_ID == &quot;ES51&quot;, comps2)
+sort!(comps2, :area, rev = true)
+println(comps2)
+
+geoms_to_geo(
+  nuts2_path, joinpath(data_dir, &quot;catalonia&quot;);
+  select       = row -&gt; row.NUTS_ID == &quot;ES51&quot; &amp;&amp; row.ring == 1,
+  target_crs   = &quot;EPSG:3857&quot;,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
+  bbox_size    = 100.0,
+  verbose      = true,
+)
+
+geoms_to_msh(
+  nuts2_path, joinpath(data_dir, &quot;catalonia&quot;);
+  select       = row -&gt; row.NUTS_ID == &quot;ES51&quot; &amp;&amp; row.ring == 1,
+  target_crs   = &quot;EPSG:3857&quot;,
+  simplify_alg = MinEdgeLength(tol = 10_000.0),
+  bbox_size    = 100.0,
+  mesh_size    = 2.0,
+  verbose      = true,
+)</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../australia/">« Australia (2D)</a><a class="docs-footer-nextpage" href="../iberia/">Iberian Peninsula (2D) »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 30 March 2026 10:43">Monday 30 March 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
